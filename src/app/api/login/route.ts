@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   const key = String(form.get("key") ?? "");
 
   if (key && key === process.env.APP_SECRET) {
-    const res = NextResponse.redirect(new URL("/", req.url));
+    const res = NextResponse.redirect(new URL("/", req.url), 303);
     res.cookies.set("app_auth", key, {
       httpOnly: true,
       sameSite: "lax",
@@ -14,5 +14,5 @@ export async function POST(req: NextRequest) {
     });
     return res;
   }
-  return NextResponse.redirect(new URL("/login?error=1", req.url));
+  return NextResponse.redirect(new URL("/login?error=1", req.url), 303);
 }
