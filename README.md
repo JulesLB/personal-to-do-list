@@ -22,15 +22,15 @@ Next.js (App Router) on Vercel · Prisma + Postgres · Claude (Anthropic) · Tel
 
 ## Setup
 
-Prereqs: Node 20+, a Postgres database (free [Neon](https://neon.tech) or Supabase), an
-Anthropic API key, and a Telegram bot.
+Prereqs: Node 20+, an Anthropic API key, and a Telegram bot. Local dev uses a SQLite
+file (zero setup); Postgres is only needed when you deploy (see Deploying below).
 
 1. `npm install`
 2. Create a Telegram bot: message [@BotFather](https://t.me/BotFather), send `/newbot`, copy the token.
 3. `cp .env.example .env` and fill it in. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`.
-4. `npm run db:push` to create the tables.
+4. `npm run db:push` to create the tables, then `npm run db:seed` for a few sample items.
 5. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
-6. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL` (your Vercel URL). Cron is already declared in `vercel.json`.
+6. Deploy: Vercel can't use SQLite, so set `provider = "postgresql"` in `prisma/schema.prisma` and use a free [Neon](https://neon.tech) `DATABASE_URL`. Push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL`, and deploy. Cron is already declared in `vercel.json`.
 7. Connect Telegram: with `APP_URL` set in `.env`, run `npm run set-webhook`.
 8. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
 
