@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id           Int       @id @default(autoincrement())
+  title        String
+  type         String    @default("task") // task | commitment | parking
+  important    Boolean   @default(true)
+  urgent       Boolean   @default(false)
+  deadline     DateTime?
+  referee      String? // wife | sister | colleague
+  cadence      String? // commitments only, e.g. "monthly"
+  status       String    @default("open") // open | done
+  snoozeUntil  DateTime?
+  lastNudgedAt DateTime?
+  doneAt       DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Setting {
+  key   String @id
+  value String
+}
