@@ -8,16 +8,6 @@ export async function markDone(id: number) {
   revalidatePath("/");
 }
 
-export async function toggleImportant(id: number, value: boolean) {
-  await prisma.item.update({ where: { id }, data: { important: value } });
-  revalidatePath("/");
-}
-
-export async function toggleUrgent(id: number, value: boolean) {
-  await prisma.item.update({ where: { id }, data: { urgent: value } });
-  revalidatePath("/");
-}
-
 export async function remove(id: number) {
   await prisma.item.delete({ where: { id } });
   revalidatePath("/");

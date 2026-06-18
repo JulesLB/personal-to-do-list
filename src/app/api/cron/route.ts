@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runSweep } from "@/lib/nudge";
+import { runSweep, type Slot } from "@/lib/nudge";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse("unauthorized", { status: 401 });
   }
-  const result = await runSweep();
+  const slot: Slot = req.nextUrl.searchParams.get("slot") === "evening" ? "evening" : "morning";
+  const result = await runSweep(slot);
   return NextResponse.json(result);
 }

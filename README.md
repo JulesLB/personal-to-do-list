@@ -1,43 +1,54 @@
 # Hermes — personal accountability engine
 
-A single-user system you run from Telegram. Text it what you commit to. It sorts by
-important vs urgent, nudges you when something rots, and pushes you to report progress
-to a real person (wife, sister, colleague) over WhatsApp. A web board shows the 2x2.
+A single-user system you run from Telegram. Text it what you commit to. It ranks everything
+by how much pressure it's under (deadline, importance, how overdue), nags you each morning
+about the one thing that's burning, and pushes you to report progress to a real person
+(wife, sister, colleague) over WhatsApp. A web board shows the same ranked list.
 
-Built on one finding: capture was never the problem, follow-through was. So the effort
-goes into nagging and accountability, not storage.
+Built on one finding: capture was never the problem, follow-through was. So the effort goes
+into nagging and accountability, not storage.
 
 ## How it works
 
-1. **Capture** — text the Telegram bot in plain language.
-2. **Classify** — Claude turns it into a structured item (type, important/urgent, deadline, referee).
-3. **See** — the web board shows the Eisenhower 2x2 plus a parking lot.
-4. **Nudge** — a daily cron pings you about overdue items, due-soon deadlines, monthly commitments, and important-but-not-urgent things that have been sitting too long.
-5. **Escalate** — miss a deadline and it hands you a one-tap WhatsApp message to your referee.
-6. **Close** — reply `done <id>`.
+1. **Capture.** Text the Telegram bot in plain language.
+2. **Classify.** Claude turns it into a structured item: type, category, importance, deadline, referee.
+3. **Rank.** Everything gets one pressure score (importance + deadline urgency + an overdue penalty). No quadrants to manage; the app decides the order.
+4. **See.** The web board leads with the burning #1, then the next four, then an expand-to-all and a quiet parking lot.
+5. **Nudge.** A daily cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short "what's next" list.
+6. **Escalate.** Miss a deadline and the nudge hands you a pre-drafted, one-tap WhatsApp message to your referee.
+7. **Close.** Tap Done, or reply `done <id>`.
+
+## Categories
+
+Each item is auto-tagged into one of six: personal, finance, fitness, work, business, learning. The board shows it as a small colored dot, so urgency keeps the loud colors and category stays quiet.
 
 ## Stack
 
-Next.js (App Router) on Vercel · Prisma + Postgres · Claude (Anthropic) · Telegram Bot API · Vercel Cron.
+Next.js 15 (App Router) on Vercel · Prisma 6 + Supabase Postgres · Claude (Anthropic, Haiku for classify) · Telegram Bot API · Vercel Cron.
 
 ## Setup
 
-Prereqs: Node 20+, an Anthropic API key, and a Telegram bot. Local dev uses a SQLite
-file (zero setup); Postgres is only needed when you deploy (see Deploying below).
+Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database (a free Supabase project works).
 
 1. `npm install`
 2. Create a Telegram bot: message [@BotFather](https://t.me/BotFather), send `/newbot`, copy the token.
-3. `cp .env.example .env` and fill it in. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`.
-4. `npm run db:push` to create the tables, then `npm run db:seed` for a few sample items.
-5. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
-6. Deploy: Vercel can't use SQLite, so set `provider = "postgresql"` in `prisma/schema.prisma` and use a free [Neon](https://neon.tech) `DATABASE_URL`. Push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL`, and deploy. Cron is already declared in `vercel.json`.
-7. Connect Telegram: with `APP_URL` set in `.env`, run `npm run set-webhook`.
-8. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
+3. Create a free [Supabase](https://supabase.com) project. Under Connect → ORMs → Prisma, copy the two pooler URLs.
+4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`. Keep comments on their own lines (see the note in `.env.example`).
+5. `npm run db:push` to create the tables, then `npm run db:seed` for a few sample items.
+6. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
+7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL`. Cron is already declared in `vercel.json` (runs 01:00 UTC = 09:00 HKT daily).
+8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
+9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
 
-The Telegram webhook needs a public URL, so the bot goes live once deployed (or via an
-ngrok tunnel for local testing). The board runs locally on its own.
+The Telegram webhook needs a public URL, so the bot goes live once deployed (or via an ngrok
+tunnel for local testing). The board runs locally on its own.
 
-## Telegram commands
+Want to develop fully offline? Set `provider = "sqlite"` in `prisma/schema.prisma` and
+`DATABASE_URL="file:./dev.db"`, then `npm run db:push`. Switch both back before you deploy.
+
+## Telegram
+
+Tap the buttons on the daily nudge, or type:
 
 | You type | It does |
 | --- | --- |
@@ -47,14 +58,19 @@ ngrok tunnel for local testing). The board runs locally on its own.
 | `snooze <id> <days>` | defers it |
 | `due <id> YYYY-MM-DD` | sets a deadline |
 
-## Cut from v1 on purpose
+## Cut on purpose
 
-- No AI deciding your priorities. You decide; it holds you to it.
+- No AI inventing your to-dos. You decide what goes in and what matters; it only computes the order and holds you to it.
 - No multiplayer or family logins. Family only receives WhatsApp messages you send.
-- No drag-and-drop yet. Buttons move items between quadrants.
+- No quadrant juggling. One ranked list, one burning thing at a time.
 
 ## The three ways it dies, and the guardrails
 
-1. **The nag becomes wallpaper.** Guard: at most 3 nudges a day, prioritized, each asking for a one-word reply.
+1. **The nag becomes wallpaper.** Guard: one message a day, the single most pressing task, asking for a one-tap reply.
 2. **The teeth never bite.** Guard: the escalation message is pre-drafted with a one-tap WhatsApp link, and the referee is set at capture.
 3. **Curation becomes a chore.** Guard: capture is one sloppy sentence, Claude does the filing, the board is read-mostly.
+
+## Helper scripts
+
+- `npm run set-webhook` — points the bot at `APP_URL/api/telegram` (subscribes to messages and button taps).
+- `npx tsx scripts/preview-nudge.ts` — prints the daily nudge text and buttons for the current DB, without sending anything.

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMessage } from "@/lib/telegram";
+import { sendMessage, answerCallback } from "@/lib/telegram";
 import { classify } from "@/lib/classify";
 
 export const dynamic = "force-dynamic";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const ok = () => NextResponse.json({ ok: true });
+
+const rememberOwner = (chatId: number | string) =>
+  prisma.setting.upsert({
+    where: { key: "ownerChatId" },
+    update: { value: String(chatId) },
+    create: { key: "ownerChatId", value: String(chatId) },
+  });
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
@@ -15,17 +22,48 @@ export async function POST(req: NextRequest) {
   }
 
   const update = await req.json().catch(() => null);
+
+  // Inline button taps from the daily nudge.
+  const cb = update?.callback_query;
+  if (cb) {
+    const cbChatId = cb.message?.chat?.id;
+    if (cbChatId) await rememberOwner(cbChatId);
+
+    const m: RegExpMatchArray | null = String(cb.data ?? "").match(/^(done|today|snooze):(\d+)$/);
+    if (m) {
+      const id = Number(m[2]);
+      if (m[1] === "done") {
+        await prisma.item
+          .update({ where: { id }, data: { status: "done", doneAt: new Date() } })
+          .catch(() => {});
+        await answerCallback(cb.id, "Done.");
+      } else if (m[1] === "today") {
+        // Record the promise. Deliberately not snoozed: the evening check is
+        // supposed to find it still open and call out the broken promise.
+        await prisma.item
+          .update({ where: { id }, data: { promisedAt: new Date() } })
+          .catch(() => {});
+        await answerCallback(cb.id, "On it today. I'll check tonight.");
+      } else {
+        const until = new Date(Date.now() + 86400000);
+        await prisma.item
+          .update({ where: { id }, data: { snoozeUntil: until, lastNudgedAt: null } })
+          .catch(() => {});
+        await answerCallback(cb.id, "Snoozed a day.");
+      }
+    } else {
+      await answerCallback(cb.id);
+    }
+    return ok();
+  }
+
   const msg = update?.message;
   const chatId = msg?.chat?.id;
   const text: string = (msg?.text ?? "").trim();
   if (!chatId || !text) return ok();
 
   // Single user: remember who is talking so the cron knows where to nudge.
-  await prisma.setting.upsert({
-    where: { key: "ownerChatId" },
-    update: { value: String(chatId) },
-    create: { key: "ownerChatId", value: String(chatId) },
-  });
+  await rememberOwner(chatId);
 
   const lower = text.toLowerCase();
 
@@ -79,7 +117,7 @@ export async function POST(req: NextRequest) {
     const due = lower.match(/^\/?due\s+(\d+)\s+(\d{4}-\d{2}-\d{2})/);
     if (due) {
       const id = Number(due[1]);
-      const date = new Date(due[2] + "T09:00:00");
+      const date = new Date(due[2] + "T09:00:00+08:00");
       await prisma.item
         .update({ where: { id }, data: { deadline: date, urgent: true } })
         .catch(() => {});
@@ -93,9 +131,10 @@ export async function POST(req: NextRequest) {
       data: {
         title: c.title,
         type: c.type,
+        category: c.category,
         important: c.important,
         urgent: c.urgent,
-        deadline: c.deadline ? new Date(c.deadline + "T09:00:00") : null,
+        deadline: c.deadline ? new Date(c.deadline + "T09:00:00+08:00") : null,
         referee: c.referee,
         cadence: c.cadence,
         snoozeUntil: c.snoozeDays ? new Date(Date.now() + c.snoozeDays * 86400000) : null,
@@ -104,6 +143,7 @@ export async function POST(req: NextRequest) {
     await sendMessage(
       chatId,
       `${c.reply}\n#${item.id} · ${item.type}` +
+        (item.category ? ` · ${item.category}` : "") +
         (c.deadline ? ` · by ${c.deadline}` : "") +
         (item.referee ? ` · ${item.referee}` : "")
     );

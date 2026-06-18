@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Item {
@@ -15,10 +16,12 @@ model Item {
   urgent       Boolean   @default(false)
   deadline     DateTime?
   referee      String? // wife | sister | colleague
+  category     String? // personal | finance | fitness | work | business | learning
   cadence      String? // commitments only, e.g. "monthly"
   status       String    @default("open") // open | done
   snoozeUntil  DateTime?
   lastNudgedAt DateTime?
+  promisedAt   DateTime? // set when you tap "I'll do it today"; evening check calls out broken promises
   doneAt       DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

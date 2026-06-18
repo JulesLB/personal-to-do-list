@@ -1,98 +1,166 @@
 import { prisma } from "./db";
-import { sendMessage } from "./telegram";
+import { sendMessage, type InlineKeyboard } from "./telegram";
 import { waLink } from "./waLink";
+import {
+  rankActionable,
+  deadlineLabel,
+  cadenceLabel,
+  heatOf,
+  daysOverdue,
+  isCritical,
+  promisedToday,
+  CATEGORIES,
+  type Category,
+} from "./rank";
+import type { Item } from "@prisma/client";
 
-const DAY = 24 * 60 * 60 * 1000;
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
-const daysSince = (d: Date) => (Date.now() - d.getTime()) / DAY;
+const DOT = "·";
+const BULLET = "•";
 
-type Nudge = { priority: number; itemId: number; text: string };
+type Tier = "calm" | "push" | "escalate";
+export type Slot = "morning" | "evening";
 
-export async function runSweep(): Promise<{ sent: number; chatId: string | null }> {
+const catLabel = (c: string | null) =>
+  c && c in CATEGORIES ? CATEGORIES[c as Category].label : null;
+
+// "calm" = top of the list, nothing on fire. "push" = burning, due today or
+// just past. "escalate" = ignored long enough to call in the referee.
+function tierOf(it: Item, now: Date): Tier {
+  if (isCritical(it, now)) return "escalate";
+  if (heatOf(it, now) === "burning") return "push";
+  return "calm";
+}
+
+export type DailyNudge = { text: string; keyboard: InlineKeyboard; topId: number };
+
+function escalationDraft(it: Item, now: Date): string {
+  if (it.type === "commitment") {
+    const cad = cadenceLabel(it.cadence);
+    return `Accountability check: I committed to "${it.title}"${cad ? ` (${cad})` : ""} and I've let it slide. Calling it out so you hold me to it.`;
+  }
+  const when = deadlineLabel(it.deadline, now) ?? "a while back";
+  return `Accountability check: I said I'd "${it.title}" (${when}) and I haven't. Calling it out so you hold me to it.`;
+}
+
+// One-line meta under a title: category, when, cadence, referee.
+function metaLine(it: Item, now: Date, withReferee: boolean): string {
+  return [
+    catLabel(it.category),
+    deadlineLabel(it.deadline, now),
+    it.type === "commitment" ? cadenceLabel(it.cadence) : null,
+    withReferee && it.referee ? `referee: ${it.referee}` : null,
+  ]
+    .filter(Boolean)
+    .join(` ${DOT} `);
+}
+
+function onDeck(it: Item, now: Date): string {
+  const meta = metaLine(it, now, false);
+  return `${BULLET} ${it.title}${meta ? ` ${DOT} ${meta}` : ""}`;
+}
+
+function brokenPromiseHeader(it: Item): string {
+  const jab = it.referee ? `Tell your ${it.referee} or get it done.` : `Own it before bed.`;
+  return `Morning-you promised "${it.title}" today. Evening-you hasn't. ${jab}`;
+}
+
+function header(it: Item, tier: Tier, slot: Slot, now: Date, broken: boolean): string {
+  if (broken) return brokenPromiseHeader(it);
+  if (tier === "escalate") {
+    if (it.type === "commitment") {
+      return it.referee
+        ? `You've let "${it.title}" slide. Time to tell your ${it.referee}.`
+        : `You've let "${it.title}" slide. Own it today.`;
+    }
+    const n = daysOverdue(it, now);
+    const lead = `Your #1 is ${n} day${n === 1 ? "" : "s"} overdue.`;
+    return it.referee ? `${lead} Time to tell your ${it.referee}.` : `${lead} Call it in.`;
+  }
+  if (tier === "push") {
+    if (slot === "evening") return "Evening check. Your #1 is still open.";
+    return it.type === "commitment" ? `You're overdue on "${it.title}".` : "Your #1 is burning.";
+  }
+  return slot === "evening" ? "Still on the list tonight." : "Top of the list today.";
+}
+
+function buttons(it: Item, tier: Tier, now: Date, broken: boolean): InlineKeyboard {
+  const done = { text: "✓ Done", callback_data: `done:${it.id}` };
+  const today = { text: "I'll do it today", callback_data: `today:${it.id}` };
+  const link = waLink(it.referee, escalationDraft(it, now));
+  const tell = link && it.referee ? { text: `Tell ${it.referee}`, url: link } : null;
+
+  let row: InlineKeyboard["inline_keyboard"][number];
+  if (broken || tier === "escalate") {
+    // Referee goes first: the point is the social cost, not the checkbox.
+    row = tell ? [tell, done, today] : [done, today];
+  } else if (tier === "push") {
+    row = tell ? [done, today, tell] : [done, today];
+  } else {
+    row = [done, { text: "Snooze 1d", callback_data: `snooze:${it.id}` }];
+  }
+  return { inline_keyboard: [row] };
+}
+
+export function buildDailyNudge(
+  items: Item[],
+  now: Date,
+  slot: Slot = "morning"
+): DailyNudge | null {
+  const ranked = rankActionable(items, now);
+  if (!ranked.length) return null;
+
+  let it = ranked[0].item;
+  let broken = false;
+
+  if (slot === "evening") {
+    // A promise you made this morning and still haven't kept wins the evening,
+    // even if it isn't the top-ranked item. That's the one that gets attitude.
+    const promise = ranked.find((r) => promisedToday(r.item, now));
+    if (promise) {
+      it = promise.item;
+      broken = true;
+    } else if (tierOf(ranked[0].item, now) === "calm") {
+      // Otherwise the evening is just an honesty check: stay quiet if nothing
+      // is actually pressing.
+      return null;
+    }
+  }
+
+  const tier = tierOf(it, now);
+  const label = broken ? "Still open" : "#1";
+  const meta = metaLine(it, now, true);
+  let text = `${header(it, tier, slot, now, broken)}\n\n${label} ${DOT} ${it.title}`;
+  if (meta) text += `\n${meta}`;
+
+  const next = ranked.filter((r) => r.item.id !== it.id).slice(0, 2);
+  if (next.length) text += `\n\nWhat's next\n${next.map((r) => onDeck(r.item, now)).join("\n")}`;
+
+  return { text, keyboard: buttons(it, tier, now, broken), topId: it.id };
+}
+
+export async function runSweep(slot: Slot = "morning"): Promise<{
+  sent: number;
+  chatId: string | null;
+  topId: number | null;
+}> {
   const setting = await prisma.setting.findUnique({ where: { key: "ownerChatId" } });
   const chatId = setting?.value ?? process.env.OWNER_CHAT_ID ?? null;
-  if (!chatId) return { sent: 0, chatId: null };
+  if (!chatId) return { sent: 0, chatId: null, topId: null };
 
-  const items = await prisma.item.findMany({ where: { status: "open" } });
   const now = new Date();
-  const nudges: Nudge[] = [];
+  const items = await prisma.item.findMany({ where: { status: "open" } });
+  const live = items.filter((i) => !(i.snoozeUntil && i.snoozeUntil > now));
 
-  for (const it of items) {
-    if (it.snoozeUntil && it.snoozeUntil > now) continue;
-    if (it.lastNudgedAt && daysSince(it.lastNudgedAt) < 1) continue;
-
-    // 1. Overdue task -> escalate to the referee
-    if (it.type === "task" && it.deadline && it.deadline < now) {
-      const draft = `Accountability check: I said I'd "${it.title}" by ${isoDate(it.deadline)} and I haven't. Calling it out so you hold me to it.`;
-      const link = waLink(it.referee, draft);
-      const tell = it.referee ? ` Time to tell your ${it.referee}.` : "";
-      nudges.push({
-        priority: 1,
-        itemId: it.id,
-        text: `Overdue: "${it.title}" (#${it.id}).${tell}${link ? `\nSend it: ${link}` : ""}\nReply "done ${it.id}" when handled.`,
-      });
-      continue;
+  const nudge = buildDailyNudge(live, now, slot);
+  if (!nudge) {
+    // Morning always reports in; evening stays silent when nothing is pressing.
+    if (slot === "morning") {
+      await sendMessage(chatId, "Nothing pressing. Clean slate. Text me something to chase.");
     }
-
-    // 2. Task due within 48h -> remind
-    if (it.type === "task" && it.deadline) {
-      const hrs = (it.deadline.getTime() - now.getTime()) / (60 * 60 * 1000);
-      if (hrs > 0 && hrs <= 48) {
-        nudges.push({
-          priority: 2,
-          itemId: it.id,
-          text: `Due soon: "${it.title}" (#${it.id}) by ${isoDate(it.deadline)}.\nReply "done ${it.id}" when handled.`,
-        });
-        continue;
-      }
-    }
-
-    // 3. Commitment due for a progress update (~monthly)
-    if (it.type === "commitment") {
-      const ref = it.lastNudgedAt ?? it.createdAt;
-      if (daysSince(ref) >= 30) {
-        const draft = `Monthly update on "${it.title}": here is where I am - `;
-        const link = waLink(it.referee, draft);
-        const tell = it.referee ? ` Show your ${it.referee} real progress.` : "";
-        nudges.push({
-          priority: 3,
-          itemId: it.id,
-          text: `Progress time: "${it.title}" (#${it.id}).${tell}${link ? `\nDraft: ${link}` : ""}`,
-        });
-        continue;
-      }
-    }
-
-    // 4. Death zone: important, not urgent, no deadline, sitting 3+ days
-    if (it.important && !it.urgent && !it.deadline && it.type !== "parking") {
-      if (daysSince(it.createdAt) >= 3) {
-        nudges.push({
-          priority: 4,
-          itemId: it.id,
-          text: `Still sitting: "${it.title}" (#${it.id}). Important but not urgent is where things die. Give it a deadline: reply "due ${it.id} YYYY-MM-DD".`,
-        });
-        continue;
-      }
-    }
-
-    // 5. Parking lot: resurface once the snooze has elapsed
-    if (it.type === "parking" && it.snoozeUntil && it.snoozeUntil <= now) {
-      nudges.push({
-        priority: 5,
-        itemId: it.id,
-        text: `Resurfacing: "${it.title}" (#${it.id}). Still want it? Reply "done ${it.id}" to clear or "snooze ${it.id} 14" to push it.`,
-      });
-      continue;
-    }
+    return { sent: 0, chatId, topId: null };
   }
 
-  nudges.sort((a, b) => a.priority - b.priority);
-  const top = nudges.slice(0, 3);
-
-  for (const n of top) {
-    await sendMessage(chatId, n.text);
-    await prisma.item.update({ where: { id: n.itemId }, data: { lastNudgedAt: new Date() } });
-  }
-
-  return { sent: top.length, chatId };
+  await sendMessage(chatId, nudge.text, nudge.keyboard);
+  await prisma.item.update({ where: { id: nudge.topId }, data: { lastNudgedAt: now } });
+  return { sent: 1, chatId, topId: nudge.topId };
 }
