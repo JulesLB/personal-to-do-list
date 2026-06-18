@@ -110,21 +110,26 @@ message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` p
 Two once-daily jobs fit the Vercel Hobby limit.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — read-mostly server component; mutations go
-through server actions in [src/app/actions.ts](src/app/actions.ts). Layout top to bottom: a category
-grid (one tile per category with its emoji, open count, and soonest deadline via `dueInLabel`), the
-burning hero (`#1`), then the rest split into three heat bands — "On fire" / "Heating up" / "Back
-burner" — and a collapsed parking lot. Rows are numbered by overall rank before being grouped by
-heat. Commitments get a retire control alongside done. Protected by
-[src/middleware.ts](src/middleware.ts), which checks an `app_auth` cookie against `APP_SECRET`;
-`/login`, `/api`, and assets are left open. `/api/login` sets the cookie.
+through server actions in [src/app/actions.ts](src/app/actions.ts). Layout top to bottom: a row of
+category filter chips (a colored dot, the label, and the open count per area), the burning hero
+(`#1`), then the rest split into three heat bands — "On fire" (always shown) / "Heating up" (open by
+default) / "Back burner" (collapsed) — and a collapsed parking lot, each band a `<details>` with its
+count in brackets. Clicking a chip sets `?cat=<key>` and filters the hero, bands, and parking lot to
+that category; the chip counts stay global so you can switch, and clicking the active chip clears the
+filter. The page reads the filter from the awaited `searchParams` (Next 15 async). Category renders
+as a small colored dot-pill on both the chips and each row; deadlines render via `dueInLabel`
+("due in 10 days", in days even past a week). Rows are no longer numbered. Commitments get a retire
+control alongside done. Protected by [src/middleware.ts](src/middleware.ts), which checks an
+`app_auth` cookie against `APP_SECRET`; `/login`, `/api`, and assets are left open. `/api/login` sets
+the cookie. Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css).
 
 ## Conventions
 
 - The six categories are defined once in `CATEGORIES` in [src/lib/rank.ts](src/lib/rank.ts), each
-  with a display `label` (e.g. business → "The Build"), an `icon` emoji, and a `dot` color. The
-  underlying category keys (`personal`, `finance`, …) are what `classify` emits; the labels are
-  display-only. The `Category` union is duplicated in `rank.ts` and `classify.ts` — keep them in
-  sync if you add one.
+  with a display `label` (e.g. business → "The Build") and a `dot` color (the board renders category
+  as a colored dot-pill). The underlying category keys (`personal`, `finance`, …) are what `classify`
+  emits; the labels are display-only. The `Category` union is duplicated in `rank.ts` and
+  `classify.ts` — keep them in sync if you add one.
 - `.env` is loaded via `node --env-file` in the npm scripts, which does **not** strip inline
   comments. Keep every `# comment` on its own line in `.env`/`.env.example` or it folds into the value.
 - Dates from Telegram commands and classify are stored at `09:00 HKT` (`T09:00:00+08:00`); all

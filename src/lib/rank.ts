@@ -12,13 +12,13 @@ export type Category =
   | "business"
   | "learning";
 
-export const CATEGORIES: Record<Category, { label: string; icon: string; dot: string }> = {
-  personal: { label: "Life", icon: "🌿", dot: "#7f77dd" },
-  finance: { label: "Money", icon: "💰", dot: "#1d9e75" },
-  fitness: { label: "Body", icon: "💪", dot: "#d85a30" },
-  work: { label: "Day Job", icon: "💼", dot: "#378add" },
-  business: { label: "The Build", icon: "🚀", dot: "#d4537e" },
-  learning: { label: "Brain", icon: "🧠", dot: "#888780" },
+export const CATEGORIES: Record<Category, { label: string; dot: string }> = {
+  personal: { label: "Life", dot: "#7f77dd" },
+  finance: { label: "Money", dot: "#1d9e75" },
+  fitness: { label: "Body", dot: "#d85a30" },
+  work: { label: "Day Job", dot: "#378add" },
+  business: { label: "The Build", dot: "#d4537e" },
+  learning: { label: "Brain", dot: "#888780" },
 };
 
 // Single user, based in Hong Kong. HK has no daylight saving, so a fixed
