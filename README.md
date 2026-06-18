@@ -34,17 +34,22 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 2. Create a Telegram bot: message [@BotFather](https://t.me/BotFather), send `/newbot`, copy the token.
 3. Create a free [Supabase](https://supabase.com) project. Under Connect → ORMs → Prisma, copy the two pooler URLs.
 4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`. Keep comments on their own lines (see the note in `.env.example`).
-5. `npm run db:push` to create the tables, then `npm run db:seed` for a few sample items.
+5. `npm run db:migrate:deploy` to apply the committed migrations and create the tables, then `npm run db:seed` for a few sample items.
 6. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
-7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars (Vercel → Settings → Environment Variables) plus `APP_URL`, then redeploy so the build picks them up. Crons are declared in `vercel.json`: 01:00 UTC (09:00 HKT, morning) and 13:00 UTC (21:00 HKT, evening). Two once-daily jobs fit the Vercel Hobby limit.
+7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars (Vercel → Settings → Environment Variables) plus `APP_URL`. Include `DIRECT_URL` (session pooler, port 5432) — Vercel's build runs `vercel-build` (`prisma migrate deploy && prisma generate && next build`), so pending migrations apply to the prod DB on every deploy. Crons are declared in `vercel.json`: 01:00 UTC (09:00 HKT, morning) and 13:00 UTC (21:00 HKT, evening). Two once-daily jobs fit the Vercel Hobby limit.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
 9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
 
 The Telegram webhook needs a public URL, so the bot goes live once deployed (or via an ngrok
 tunnel for local testing). The board runs locally on its own.
 
+The schema is versioned with Prisma Migrate (`prisma/migrations/`, committed to git). After editing
+`prisma/schema.prisma`, run `npm run db:migrate` to create and apply a migration locally, then commit
+the SQL. Deploys apply pending migrations automatically (see step 7).
+
 Want to develop fully offline? Set `provider = "sqlite"` in `prisma/schema.prisma` and
-`DATABASE_URL="file:./dev.db"`, then `npm run db:push`. Switch both back before you deploy.
+`DATABASE_URL="file:./dev.db"`, then `npm run db:push` (the offline path uses push, not migrate).
+Switch both back before you commit.
 
 ## Telegram
 

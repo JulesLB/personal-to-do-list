@@ -17,12 +17,13 @@ the UTC server. The single user is based in Hong Kong.
 ## Commands
 
 ```bash
-npm run dev            # Next.js dev server on :3000
-npm run build          # prisma generate && next build
-npm run db:push        # apply prisma/schema.prisma to the DB (no migration files)
-npm run db:seed        # load sample items (node --env-file=.env prisma/seed.mjs)
-npm run db:studio      # Prisma Studio
-npm run set-webhook    # point the Telegram bot at APP_URL/api/telegram
+npm run dev             # Next.js dev server on :3000
+npm run build           # prisma generate && next build (type-check gate)
+npm run db:migrate       # prisma migrate dev — create + apply a migration after editing the schema
+npm run db:migrate:deploy # prisma migrate deploy — apply pending migrations (what Vercel runs)
+npm run db:seed         # load sample items (node --env-file=.env prisma/seed.mjs)
+npm run db:studio       # Prisma Studio
+npm run set-webhook     # point the Telegram bot at APP_URL/api/telegram
 npx tsx scripts/preview-nudge.ts [evening]   # print the morning (or evening) nudge without sending
 ```
 
@@ -30,13 +31,19 @@ npx tsx scripts/preview-nudge.ts [evening]   # print the morning (or evening) nu
 run against a fixed clock, no DB. There is no linter. `npm run build` (which runs `prisma generate`)
 is the type-check / sanity gate. Run both before committing.
 
-## Local DB note
+## Database migrations
 
-The schema's datasource provider is `postgresql` (Supabase in prod). To develop fully offline,
-switch `provider` in [prisma/schema.prisma](prisma/schema.prisma) to `sqlite`, set
-`DATABASE_URL="file:./dev.db"`, run `npm run db:push`, and switch both back before deploying.
-Recent git history shows this repo flipping between the two — check `git status` on the schema
-before assuming which mode you're in.
+The schema is versioned with **Prisma Migrate**; migration files live in
+[prisma/migrations/](prisma/migrations/) and are committed to git. The flow: edit
+[prisma/schema.prisma](prisma/schema.prisma), run `npm run db:migrate` to create and apply a
+migration locally, commit the generated SQL. On deploy, Vercel runs `vercel-build`
+(`prisma migrate deploy && prisma generate && next build`), so pending migrations apply
+automatically against the prod DB — no manual `db push` step. `DIRECT_URL` (session pooler, 5432)
+must be set in Vercel for migrations to run.
+
+`db push` is retained only for the fully-offline SQLite path: switch `provider` in the schema to
+`sqlite`, set `DATABASE_URL="file:./dev.db"`, run `npm run db:push`, and switch both back before
+committing. Don't mix `db push` and migrate against the same Postgres DB.
 
 ## Architecture
 
