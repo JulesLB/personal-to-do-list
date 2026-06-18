@@ -5,11 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Hermes — a single-user accountability engine. You text a Telegram bot what you commit to;
-Claude classifies it into a structured item; a pressure score ranks everything; a daily Vercel
-cron sends one nudge about the most pressing task; missing a deadline surfaces a pre-drafted
-WhatsApp message to a "referee" (wife/sister/colleague). A password-gated web board shows the
-same ranked list. The bet: capture was never the problem, follow-through was — so the code
-invests in ranking, nagging, and escalation, not storage.
+Claude classifies it into a structured item; a pressure score ranks everything; two daily Vercel
+crons (a morning nudge and an evening honesty check) push the most pressing task; ignoring it long
+enough surfaces a pre-drafted WhatsApp message to a "referee" (wife/sister/colleague). A
+password-gated web board shows the same ranked list. The bet: capture was never the problem,
+follow-through was — so the code invests in ranking, nagging, and escalation, not storage.
+
+All day/deadline math runs in **HKT (UTC+8, fixed offset, no DST)** so "due today" never drifts on
+the UTC server. The single user is based in Hong Kong.
 
 ## Commands
 
@@ -20,7 +23,7 @@ npm run db:push        # apply prisma/schema.prisma to the DB (no migration file
 npm run db:seed        # load sample items (node --env-file=.env prisma/seed.mjs)
 npm run db:studio      # Prisma Studio
 npm run set-webhook    # point the Telegram bot at APP_URL/api/telegram
-npx tsx scripts/preview-nudge.ts   # print the daily nudge text+buttons without sending
+npx tsx scripts/preview-nudge.ts [evening]   # print the morning (or evening) nudge without sending
 ```
 
 There is no test runner and no linter configured. `npm run build` (which runs `prisma generate`)
@@ -41,35 +44,48 @@ The data model is deliberately one flat table. Everything else is functions over
 **`Item`** ([prisma/schema.prisma](prisma/schema.prisma)) — the only real entity. Key fields:
 `type` (`task` | `commitment` | `parking`), `important`/`urgent` booleans, `deadline`, `referee`,
 `category` (six fixed values), `cadence` (commitments only), `status`, `snoozeUntil`,
-`lastNudgedAt`. **`Setting`** is a key/value table whose only live key is `ownerChatId` — the
-single user's Telegram chat, auto-learned from their first message so the cron knows where to nudge.
+`lastNudgedAt`, `promisedAt` (set when you tap "I'll do it today"; the evening check reads it to
+call out broken promises). **`Setting`** is a key/value table whose only live key is `ownerChatId` —
+the single user's Telegram chat, auto-learned from their first message so the cron knows where to nudge.
 
 **Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). `rankScore` collapses
 importance + urgency + deadline proximity + (for commitments) cadence-overdue into one number.
-`heatOf` buckets an item into `burning` / `soon` / `later` for display. Parking items score `-1`
-and are excluded from the actionable list. There are no quadrants — the score decides order.
-If you touch scoring, this is the file; the board and the nudge both consume `rankActionable`.
+`heatOf` buckets an item into `burning` / `soon` / `later` for display (commitments go `burning`
+once they're a full cadence cycle overdue). `daysOverdue` and `isCritical` drive escalation;
+`promisedToday` flags a broken same-day promise. All day boundaries use `startOfDayHKT`. Parking
+items score `-1` and are excluded from the actionable list. There are no quadrants — the score
+decides order. The board and both nudge slots consume `rankActionable`.
 
 **Classification** ([src/lib/classify.ts](src/lib/classify.ts)) — one Claude call with a forced
 `save_item` tool to turn a messy sentence into a `Classified` object. The system prompt encodes
 Jules-specific rules (which referee for what, the six categories, the important-but-not-urgent
-"death zone"). Models are pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): `classify` uses
-Haiku, `write` (Sonnet) is defined but not yet used.
+"death zone"). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the
+only model called anywhere in the app.
 
 **Telegram webhook** ([src/app/api/telegram/route.ts](src/app/api/telegram/route.ts)) — the main
 input surface. Handles inline button callbacks (`done:`/`today:`/`snooze:<id>`) and typed commands
 (`list`, `done <id>`, `snooze <id> <days>`, `due <id> YYYY-MM-DD`) via regex; anything else falls
-through to `classify` and gets stored. Auth is the `x-telegram-bot-api-secret-token` header vs
-`TELEGRAM_WEBHOOK_SECRET`. Always returns 200 (even on internal error) so Telegram doesn't retry.
+through to `classify` and gets stored. `today:` sets `promisedAt` (deliberately *not* a snooze, so
+the evening sweep can catch it still open). Deadlines are stored at `09:00 HKT` (`T09:00:00+08:00`).
+Auth is the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET`. Always returns
+200 (even on internal error) so Telegram doesn't retry.
 
-**Nudge engine** ([src/lib/nudge.ts](src/lib/nudge.ts)) — `buildDailyNudge` is pure (items → text +
-keyboard), `runSweep` is the side-effecting wrapper the cron calls. When the top item is `burning`
-and has a referee, the keyboard gets a "Tell <referee>" button linking to a `wa.me` deep link
-([src/lib/waLink.ts](src/lib/waLink.ts)) with a pre-drafted escalation message. Keep `buildDailyNudge`
-pure — that's what `preview-nudge.ts` relies on.
+**Nudge engine** ([src/lib/nudge.ts](src/lib/nudge.ts)) — `buildDailyNudge(items, now, slot)` is
+pure (items → text + keyboard + topId); `runSweep(slot)` is the side-effecting wrapper the cron
+calls. Two slots: `morning` always reports in (or "clean slate"); `evening` is an honesty check
+that stays silent unless something is pressing. Pressure has three tiers — `calm` (Done/Snooze),
+`push` (burning: Done / I'll-do-it-today / Tell referee), `escalate` (task 3+ days overdue or
+commitment past 2 cadence cycles: referee button goes *first*, copy turns blunt). If you tapped
+"I'll do it today" and it's still open that evening, the evening nudge leads with a broken-promise
+line. The "Tell <referee>" button is a `wa.me` deep link ([src/lib/waLink.ts](src/lib/waLink.ts),
+which rejects numbers under 8 digits so a placeholder can't render a dead link) with a pre-drafted
+message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` pure — that's what
+`preview-nudge.ts` relies on.
 
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
-`Bearer ${CRON_SECRET}`, declared in [vercel.json](vercel.json) at `0 1 * * *` (01:00 UTC = 09:00 HKT).
+`Bearer ${CRON_SECRET}`, reads `?slot=evening` (defaults to morning). Two jobs in
+[vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
+Two once-daily jobs fit the Vercel Hobby limit.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — read-mostly server component; mutations go
 through server actions in [src/app/actions.ts](src/app/actions.ts). Protected by
@@ -83,6 +99,6 @@ through server actions in [src/app/actions.ts](src/app/actions.ts). Protected by
   `classify.ts` — keep them in sync if you add one.
 - `.env` is loaded via `node --env-file` in the npm scripts, which does **not** strip inline
   comments. Keep every `# comment` on its own line in `.env`/`.env.example` or it folds into the value.
-- Dates from Telegram commands and classify are stored at `T09:00:00` local-ish (no timezone math
-  beyond that); ranking uses calendar-day diffs via `startOfDay`.
+- Dates from Telegram commands and classify are stored at `09:00 HKT` (`T09:00:00+08:00`); all
+  ranking/heat/overdue diffs use calendar-day math in HKT via `startOfDayHKT` (UTC+8, no DST).
 - Single-user by design: no per-user scoping anywhere. `ownerChatId` in `Setting` is the whole auth model for who gets nudged.

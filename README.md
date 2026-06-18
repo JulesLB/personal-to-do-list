@@ -1,9 +1,9 @@
 # Hermes — personal accountability engine
 
 A single-user system you run from Telegram. Text it what you commit to. It ranks everything
-by how much pressure it's under (deadline, importance, how overdue), nags you each morning
-about the one thing that's burning, and pushes you to report progress to a real person
-(wife, sister, colleague) over WhatsApp. A web board shows the same ranked list.
+by how much pressure it's under (deadline, importance, how overdue), nudges you each morning
+about the one thing that's burning, checks in again at night, and pushes you to report progress
+to a real person (wife, sister, colleague) over WhatsApp. A web board shows the same ranked list.
 
 Built on one finding: capture was never the problem, follow-through was. So the effort goes
 into nagging and accountability, not storage.
@@ -14,8 +14,8 @@ into nagging and accountability, not storage.
 2. **Classify.** Claude turns it into a structured item: type, category, importance, deadline, referee.
 3. **Rank.** Everything gets one pressure score (importance + deadline urgency + an overdue penalty). No quadrants to manage; the app decides the order.
 4. **See.** The web board leads with the burning #1, then the next four, then an expand-to-all and a quiet parking lot.
-5. **Nudge.** A daily cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short "what's next" list.
-6. **Escalate.** Miss a deadline and the nudge hands you a pre-drafted, one-tap WhatsApp message to your referee.
+5. **Nudge.** A morning cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short "what's next" list. An evening cron checks back, but only if something's still pressing.
+6. **Escalate.** The more overdue something gets, the louder it pushes. A task 3+ days late, or a commitment you've skipped two cycles running, leads with a pre-drafted, one-tap WhatsApp message to your referee. Tap "I'll do it today" and fail to, and the evening check calls out the broken promise.
 7. **Close.** Tap Done, or reply `done <id>`.
 
 ## Categories
@@ -36,7 +36,7 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`. Keep comments on their own lines (see the note in `.env.example`).
 5. `npm run db:push` to create the tables, then `npm run db:seed` for a few sample items.
 6. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
-7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL`. Cron is already declared in `vercel.json` (runs 01:00 UTC = 09:00 HKT daily).
+7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars (Vercel → Settings → Environment Variables) plus `APP_URL`, then redeploy so the build picks them up. Crons are declared in `vercel.json`: 01:00 UTC (09:00 HKT, morning) and 13:00 UTC (21:00 HKT, evening). Two once-daily jobs fit the Vercel Hobby limit.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
 9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
 
@@ -66,11 +66,11 @@ Tap the buttons on the daily nudge, or type:
 
 ## The three ways it dies, and the guardrails
 
-1. **The nag becomes wallpaper.** Guard: one message a day, the single most pressing task, asking for a one-tap reply.
+1. **The nag becomes wallpaper.** Guard: at most two messages a day on the single most pressing task, and the evening one stays silent unless something's actually burning.
 2. **The teeth never bite.** Guard: the escalation message is pre-drafted with a one-tap WhatsApp link, and the referee is set at capture.
 3. **Curation becomes a chore.** Guard: capture is one sloppy sentence, Claude does the filing, the board is read-mostly.
 
 ## Helper scripts
 
 - `npm run set-webhook` — points the bot at `APP_URL/api/telegram` (subscribes to messages and button taps).
-- `npx tsx scripts/preview-nudge.ts` — prints the daily nudge text and buttons for the current DB, without sending anything.
+- `npx tsx scripts/preview-nudge.ts [evening]` — prints the morning (or evening) nudge text and buttons for the current DB, without sending anything.
