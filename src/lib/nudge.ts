@@ -1,5 +1,4 @@
-import { prisma } from "./db";
-import { sendMessage, type InlineKeyboard } from "./telegram";
+import type { InlineKeyboard } from "./telegram";
 import { waLink } from "./waLink";
 import {
   rankActionable,
@@ -136,31 +135,4 @@ export function buildDailyNudge(
   if (next.length) text += `\n\nWhat's next\n${next.map((r) => onDeck(r.item, now)).join("\n")}`;
 
   return { text, keyboard: buttons(it, tier, now, broken), topId: it.id };
-}
-
-export async function runSweep(slot: Slot = "morning"): Promise<{
-  sent: number;
-  chatId: string | null;
-  topId: number | null;
-}> {
-  const setting = await prisma.setting.findUnique({ where: { key: "ownerChatId" } });
-  const chatId = setting?.value ?? process.env.OWNER_CHAT_ID ?? null;
-  if (!chatId) return { sent: 0, chatId: null, topId: null };
-
-  const now = new Date();
-  const items = await prisma.item.findMany({ where: { status: "open" } });
-  const live = items.filter((i) => !(i.snoozeUntil && i.snoozeUntil > now));
-
-  const nudge = buildDailyNudge(live, now, slot);
-  if (!nudge) {
-    // Morning always reports in; evening stays silent when nothing is pressing.
-    if (slot === "morning") {
-      await sendMessage(chatId, "Nothing pressing. Clean slate. Text me something to chase.");
-    }
-    return { sent: 0, chatId, topId: null };
-  }
-
-  await sendMessage(chatId, nudge.text, nudge.keyboard);
-  await prisma.item.update({ where: { id: nudge.topId }, data: { lastNudgedAt: now } });
-  return { sent: 1, chatId, topId: nudge.topId };
 }

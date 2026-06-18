@@ -9,7 +9,9 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "node --env-file=.env prisma/seed.mjs",
-    "set-webhook": "node --env-file=.env scripts/set-webhook.mjs"
+    "set-webhook": "node --env-file=.env scripts/set-webhook.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
@@ -23,6 +25,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "prisma": "^6.19.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }

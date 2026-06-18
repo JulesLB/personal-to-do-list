@@ -16,7 +16,7 @@ into nagging and accountability, not storage.
 4. **See.** The web board leads with the burning #1, then the next four, then an expand-to-all and a quiet parking lot.
 5. **Nudge.** A morning cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short "what's next" list. An evening cron checks back, but only if something's still pressing.
 6. **Escalate.** The more overdue something gets, the louder it pushes. A task 3+ days late, or a commitment you've skipped two cycles running, leads with a pre-drafted, one-tap WhatsApp message to your referee. Tap "I'll do it today" and fail to, and the evening check calls out the broken promise.
-7. **Close.** Tap Done, or reply `done <id>`.
+7. **Close.** Tap Done, or reply `done <id>`. A one-off task closes for good. A recurring commitment doesn't: marking it done honors the current cycle, resets its clock, and lets it resurface one cadence later. Ending one for good is the explicit `retire <id>`.
 
 ## Categories
 
@@ -54,9 +54,10 @@ Tap the buttons on the daily nudge, or type:
 | --- | --- |
 | anything | captures and classifies it |
 | `list` | shows open items |
-| `done <id>` | marks complete |
+| `done <id>` | completes it (a commitment is honored for this cycle and resurfaces later) |
 | `snooze <id> <days>` | defers it |
 | `due <id> YYYY-MM-DD` | sets a deadline |
+| `retire <id>` | ends a commitment for good |
 
 ## Cut on purpose
 
@@ -74,3 +75,8 @@ Tap the buttons on the daily nudge, or type:
 
 - `npm run set-webhook` — points the bot at `APP_URL/api/telegram` (subscribes to messages and button taps).
 - `npx tsx scripts/preview-nudge.ts [evening]` — prints the morning (or evening) nudge text and buttons for the current DB, without sending anything.
+- `npx tsx scripts/preview-sweep.ts [evening]` — dry-runs the full sweep against the local DB (ranking, accountability-memory writes, Event log) and prints the message plus the top item's nudge/ignore counters, without hitting Telegram. Run it twice to watch `ignoreCount` climb.
+
+## Tests
+
+`npm test` runs the Vitest suite over the pure ranking and nudge logic (`src/lib/rank.ts`, `src/lib/nudge.ts`) against a fixed clock, no DB required. `npm run build` is the type-check gate. Run both before committing.

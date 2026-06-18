@@ -15,6 +15,30 @@ const rememberOwner = (chatId: number | string) =>
     create: { key: "ownerChatId", value: String(chatId) },
   });
 
+const logEvent = (itemId: number, kind: string) =>
+  prisma.event.create({ data: { itemId, kind } }).catch(() => {});
+
+// Completing a commitment honors the current cycle and resets its clock; it
+// stays open and resurfaces a cadence period later. Tasks close for good.
+async function completeItem(id: number): Promise<void> {
+  const item = await prisma.item.findUnique({ where: { id } });
+  if (!item) return;
+  if (item.type === "commitment") {
+    await prisma.item.update({
+      where: { id },
+      data: {
+        lastDoneAt: new Date(),
+        lastNudgedAt: null,
+        promisedAt: null,
+        cycleStreak: { increment: 1 },
+      },
+    });
+  } else {
+    await prisma.item.update({ where: { id }, data: { status: "done", doneAt: new Date() } });
+  }
+  await logEvent(id, "done");
+}
+
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("x-telegram-bot-api-secret-token");
   if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
@@ -33,9 +57,7 @@ export async function POST(req: NextRequest) {
     if (m) {
       const id = Number(m[2]);
       if (m[1] === "done") {
-        await prisma.item
-          .update({ where: { id }, data: { status: "done", doneAt: new Date() } })
-          .catch(() => {});
+        await completeItem(id).catch(() => {});
         await answerCallback(cb.id, "Done.");
       } else if (m[1] === "today") {
         // Record the promise. Deliberately not snoozed: the evening check is
@@ -43,12 +65,14 @@ export async function POST(req: NextRequest) {
         await prisma.item
           .update({ where: { id }, data: { promisedAt: new Date() } })
           .catch(() => {});
+        await logEvent(id, "promised");
         await answerCallback(cb.id, "On it today. I'll check tonight.");
       } else {
         const until = new Date(Date.now() + 86400000);
         await prisma.item
           .update({ where: { id }, data: { snoozeUntil: until, lastNudgedAt: null } })
           .catch(() => {});
+        await logEvent(id, "snoozed");
         await answerCallback(cb.id, "Snoozed a day.");
       }
     } else {
@@ -71,7 +95,7 @@ export async function POST(req: NextRequest) {
     if (lower === "/start") {
       await sendMessage(
         chatId,
-        'Hermes here. Text me anything and I log it. Commands: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD".'
+        'Hermes here. Text me anything and I log it. Commands: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
       );
       return ok();
     }
@@ -95,10 +119,18 @@ export async function POST(req: NextRequest) {
     const done = lower.match(/^\/?done\s+(\d+)/);
     if (done) {
       const id = Number(done[1]);
-      await prisma.item
-        .update({ where: { id }, data: { status: "done", doneAt: new Date() } })
-        .catch(() => {});
+      await completeItem(id).catch(() => {});
       await sendMessage(chatId, `Done: #${id}.`);
+      return ok();
+    }
+
+    const retire = lower.match(/^\/?retire\s+(\d+)/);
+    if (retire) {
+      const id = Number(retire[1]);
+      await prisma.item
+        .update({ where: { id }, data: { status: "retired", doneAt: new Date() } })
+        .catch(() => {});
+      await sendMessage(chatId, `Retired #${id}. It won't resurface.`);
       return ok();
     }
 
@@ -110,6 +142,7 @@ export async function POST(req: NextRequest) {
       await prisma.item
         .update({ where: { id }, data: { snoozeUntil: until, lastNudgedAt: null } })
         .catch(() => {});
+      await logEvent(id, "snoozed");
       await sendMessage(chatId, `Snoozed #${id} for ${days} day(s).`);
       return ok();
     }

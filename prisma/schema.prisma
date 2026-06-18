@@ -18,13 +18,31 @@ model Item {
   referee      String? // wife | sister | colleague
   category     String? // personal | finance | fitness | work | business | learning
   cadence      String? // commitments only, e.g. "monthly"
-  status       String    @default("open") // open | done
+  status       String    @default("open") // open | done | retired
   snoozeUntil  DateTime?
   lastNudgedAt DateTime?
   promisedAt   DateTime? // set when you tap "I'll do it today"; evening check calls out broken promises
   doneAt       DateTime?
+  lastDoneAt   DateTime? // commitments: when the current cycle was last honored; drives cadence-overdue math
+  cycleStreak  Int       @default(0) // commitments: consecutive cycles honored
+  nudgeCount   Int       @default(0) // how many times this item has topped a sent nudge
+  ignoreCount  Int       @default(0) // how many times it was re-nudged while still open (i.e. ignored)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  events       Event[]
+}
+
+// Append-only audit trail. The scoreboard (Phase 3) and escalation (Phase 2)
+// both read this; nothing mutates a row once written.
+model Event {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  kind      String // nudged | snoozed | promised | done | escalated | told_referee
+  slot      String? // morning | evening, when the event came from a cron
+  createdAt DateTime @default(now())
+
+  @@index([itemId])
 }
 
 model Setting {

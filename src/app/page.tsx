@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { markDone, remove } from "./actions";
+import { markDone, remove, retire } from "./actions";
 import { rankActionable, deadlineLabel, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { waLink } from "@/lib/waLink";
 
@@ -43,8 +43,13 @@ export default async function Board() {
         </div>
         {i.referee ? <span className="ref">{i.referee}</span> : null}
         <form action={markDone.bind(null, i.id)}>
-          <button className="done" aria-label="mark done">✓</button>
+          <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
         </form>
+        {i.type === "commitment" ? (
+          <form action={retire.bind(null, i.id)}>
+            <button className="del" aria-label="retire commitment" title="Retire for good">×</button>
+          </form>
+        ) : null}
       </div>
     );
   };
@@ -74,12 +79,17 @@ export default async function Board() {
           </div>
           <div className="hero-actions">
             <form action={markDone.bind(null, hero.item.id)}>
-              <button className="done-lg">Done</button>
+              <button className="done-lg">{hero.item.type === "commitment" ? "Did it" : "Done"}</button>
             </form>
             {heroTell ? (
               <a className="tell" href={heroTell}>
                 Tell {hero.item.referee}
               </a>
+            ) : null}
+            {hero.item.type === "commitment" ? (
+              <form action={retire.bind(null, hero.item.id)}>
+                <button className="retire-lg" title="Retire this commitment for good">Retire</button>
+              </form>
             ) : null}
           </div>
         </section>

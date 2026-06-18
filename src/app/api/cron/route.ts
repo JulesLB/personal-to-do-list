@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runSweep, type Slot } from "@/lib/nudge";
+import { runSweep, type Slot } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 

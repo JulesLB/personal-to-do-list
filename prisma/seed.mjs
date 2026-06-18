@@ -18,8 +18,8 @@ const items = [
   { title: "Register the marriage in the French registry", type: "task", category: "personal", important: true, urgent: false, deadline: at9(10), referee: "wife" },
   { title: "Renew the gym membership", type: "task", category: "fitness", important: false, urgent: false, deadline: at9(7), referee: null },
   { title: "Reply to the building admin email", type: "task", category: "personal", important: false, urgent: true, referee: null },
-  { title: "Build the company", type: "commitment", category: "business", important: true, urgent: false, cadence: "monthly", referee: "sister", lastNudgedAt: ago(70) },
-  { title: "Upskill in AI: n8n + agents", type: "commitment", category: "learning", important: true, urgent: false, cadence: "weekly", referee: "colleague", lastNudgedAt: ago(9) },
+  { title: "Build the company", type: "commitment", category: "business", important: true, urgent: false, cadence: "monthly", referee: "sister", lastDoneAt: ago(70) },
+  { title: "Upskill in AI: n8n + agents", type: "commitment", category: "learning", important: true, urgent: false, cadence: "weekly", referee: "colleague", lastDoneAt: ago(9) },
   { title: "Watch: the n8n automation video", type: "parking", category: "learning", important: false, urgent: false, snoozeUntil: new Date(Date.now() + 14 * day) },
   { title: "Pick the next restaurant with my wife", type: "parking", category: "personal", important: false, urgent: false },
 ];

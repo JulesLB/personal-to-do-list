@@ -26,8 +26,9 @@ npm run set-webhook    # point the Telegram bot at APP_URL/api/telegram
 npx tsx scripts/preview-nudge.ts [evening]   # print the morning (or evening) nudge without sending
 ```
 
-There is no test runner and no linter configured. `npm run build` (which runs `prisma generate`)
-is the type-check / sanity gate.
+`npm test` (Vitest) covers the pure logic in `rank.ts` and `nudge.ts`; tests live in `tests/` and
+run against a fixed clock, no DB. There is no linter. `npm run build` (which runs `prisma generate`)
+is the type-check / sanity gate. Run both before committing.
 
 ## Local DB note
 
@@ -41,12 +42,21 @@ before assuming which mode you're in.
 
 The data model is deliberately one flat table. Everything else is functions over it.
 
-**`Item`** ([prisma/schema.prisma](prisma/schema.prisma)) — the only real entity. Key fields:
+**`Item`** ([prisma/schema.prisma](prisma/schema.prisma)) — the main entity. Key fields:
 `type` (`task` | `commitment` | `parking`), `important`/`urgent` booleans, `deadline`, `referee`,
-`category` (six fixed values), `cadence` (commitments only), `status`, `snoozeUntil`,
-`lastNudgedAt`, `promisedAt` (set when you tap "I'll do it today"; the evening check reads it to
-call out broken promises). **`Setting`** is a key/value table whose only live key is `ownerChatId` —
-the single user's Telegram chat, auto-learned from their first message so the cron knows where to nudge.
+`category` (six fixed values), `cadence` (commitments only), `status` (`open` | `done` | `retired`),
+`snoozeUntil`, `lastNudgedAt`, `promisedAt` (set when you tap "I'll do it today"; the evening check
+reads it to call out broken promises). Commitments also use `lastDoneAt` (when the current cycle was
+last honored — this, not `lastNudgedAt`, drives cadence-overdue math so nudging never resets the
+clock) and `cycleStreak`. Accountability memory lives in `nudgeCount` / `ignoreCount` (bumped in the
+sweep) plus an append-only **`Event`** table (`itemId`, `kind` = `nudged|snoozed|promised|done|...`,
+`slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table whose
+only live key is `ownerChatId` — the single user's Telegram chat, auto-learned from their first
+message so the cron knows where to nudge.
+
+Completing a **commitment** does not close it: it sets `lastDoneAt = now`, clears `lastNudgedAt` /
+`promisedAt`, bumps `cycleStreak`, and leaves `status = open` so it resurfaces one cadence later.
+`retire` is the explicit "end it for good" path (`status = retired`). Tasks still close on done.
 
 **Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). `rankScore` collapses
 importance + urgency + deadline proximity + (for commitments) cadence-overdue into one number.
@@ -64,15 +74,20 @@ only model called anywhere in the app.
 
 **Telegram webhook** ([src/app/api/telegram/route.ts](src/app/api/telegram/route.ts)) — the main
 input surface. Handles inline button callbacks (`done:`/`today:`/`snooze:<id>`) and typed commands
-(`list`, `done <id>`, `snooze <id> <days>`, `due <id> YYYY-MM-DD`) via regex; anything else falls
-through to `classify` and gets stored. `today:` sets `promisedAt` (deliberately *not* a snooze, so
-the evening sweep can catch it still open). Deadlines are stored at `09:00 HKT` (`T09:00:00+08:00`).
+(`list`, `done <id>`, `snooze <id> <days>`, `due <id> YYYY-MM-DD`, `retire <id>`) via regex; anything
+else falls through to `classify` and gets stored. `done` routes through `completeItem` (commitment-
+aware, see above) and logs a `done` Event; `today:` sets `promisedAt` (deliberately *not* a snooze,
+so the evening sweep can catch it still open) and logs `promised`. Deadlines are stored at `09:00
+HKT` (`T09:00:00+08:00`).
 Auth is the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET`. Always returns
 200 (even on internal error) so Telegram doesn't retry.
 
-**Nudge engine** ([src/lib/nudge.ts](src/lib/nudge.ts)) — `buildDailyNudge(items, now, slot)` is
-pure (items → text + keyboard + topId); `runSweep(slot)` is the side-effecting wrapper the cron
-calls. Two slots: `morning` always reports in (or "clean slate"); `evening` is an honesty check
+**Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
+pure (items → text + keyboard + topId) and imports no DB/Telegram, so it's unit-tested directly.
+`runSweep(slot)` in [src/lib/sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper the cron
+calls: it reads the DB, sends the message, and writes accountability memory (bumps `nudgeCount`,
+bumps `ignoreCount` when it re-nudges an item that's still open, appends a `nudged` Event). Two
+slots: `morning` always reports in (or "clean slate"); `evening` is an honesty check
 that stays silent unless something is pressing. Pressure has three tiers — `calm` (Done/Snooze),
 `push` (burning: Done / I'll-do-it-today / Tell referee), `escalate` (task 3+ days overdue or
 commitment past 2 cadence cycles: referee button goes *first*, copy turns blunt). If you tapped

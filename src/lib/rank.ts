@@ -43,12 +43,16 @@ export function promisedToday(item: Item, now: Date): boolean {
 const cadenceDays = (cadence: string | null) =>
   cadence === "weekly" ? 7 : cadence === "daily" ? 1 : 30;
 
-const sinceUpdate = (item: Item) =>
-  (Date.now() - (item.lastNudgedAt ?? item.createdAt).getTime()) / DAY;
+// Days since the commitment was last honored. Keys off lastDoneAt (not
+// lastNudgedAt) so nudging a commitment never resets its overdue clock, and
+// completing one cycle pushes the next due date out by a full period.
+const sinceLastDone = (item: Item, now: Date) =>
+  (now.getTime() - (item.lastDoneAt ?? item.createdAt).getTime()) / DAY;
 
 // How far past the cadence period a commitment has drifted, in cycles.
 // 1.0 = exactly one period elapsed (due now); 2.0 = a full extra cycle missed.
-const cadenceProgress = (item: Item) => sinceUpdate(item) / cadenceDays(item.cadence);
+const cadenceProgress = (item: Item, now: Date) =>
+  sinceLastDone(item, now) / cadenceDays(item.cadence);
 
 export function rankScore(item: Item, now: Date): number {
   if (item.type === "parking") return -1;
@@ -57,7 +61,7 @@ export function rankScore(item: Item, now: Date): number {
   if (item.urgent) s += 10;
 
   if (item.type === "commitment") {
-    const p = cadenceProgress(item);
+    const p = cadenceProgress(item, now);
     return s + (p >= 2 ? 50 : p >= 1 ? 40 : 5);
   }
 
@@ -76,7 +80,7 @@ export function rankScore(item: Item, now: Date): number {
 
 export function heatOf(item: Item, now: Date): Heat {
   if (item.type === "commitment") {
-    const p = cadenceProgress(item);
+    const p = cadenceProgress(item, now);
     if (p >= 1) return "burning";
     if (p >= 0.75) return "soon";
     return "later";
@@ -92,7 +96,7 @@ export function heatOf(item: Item, now: Date): Heat {
 // Commitments: days drifted beyond one cadence period. -Infinity = not applicable.
 export function daysOverdue(item: Item, now: Date): number {
   if (item.type === "commitment") {
-    return Math.floor(sinceUpdate(item) - cadenceDays(item.cadence));
+    return Math.floor(sinceLastDone(item, now) - cadenceDays(item.cadence));
   }
   if (!item.deadline) return -Infinity;
   return Math.round(
@@ -103,7 +107,7 @@ export function daysOverdue(item: Item, now: Date): number {
 // The accountability trigger: blunt copy + referee-first buttons.
 // Tasks 3+ days overdue, or a commitment that has missed a full extra cycle.
 export function isCritical(item: Item, now: Date): boolean {
-  if (item.type === "commitment") return cadenceProgress(item) >= 2;
+  if (item.type === "commitment") return cadenceProgress(item, now) >= 2;
   return item.type === "task" && !!item.deadline && daysOverdue(item, now) >= 3;
 }
 
