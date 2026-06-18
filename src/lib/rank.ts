@@ -12,13 +12,13 @@ export type Category =
   | "business"
   | "learning";
 
-export const CATEGORIES: Record<Category, { label: string; dot: string }> = {
-  personal: { label: "Personal", dot: "#7f77dd" },
-  finance: { label: "Finance", dot: "#1d9e75" },
-  fitness: { label: "Fitness", dot: "#d85a30" },
-  work: { label: "Work", dot: "#378add" },
-  business: { label: "Business", dot: "#d4537e" },
-  learning: { label: "Learning", dot: "#888780" },
+export const CATEGORIES: Record<Category, { label: string; icon: string; dot: string }> = {
+  personal: { label: "Life", icon: "🌿", dot: "#7f77dd" },
+  finance: { label: "Money", icon: "💰", dot: "#1d9e75" },
+  fitness: { label: "Body", icon: "💪", dot: "#d85a30" },
+  work: { label: "Day Job", icon: "💼", dot: "#378add" },
+  business: { label: "The Build", icon: "🚀", dot: "#d4537e" },
+  learning: { label: "Brain", icon: "🧠", dot: "#888780" },
 };
 
 // Single user, based in Hong Kong. HK has no daylight saving, so a fixed
@@ -121,6 +121,19 @@ export function deadlineLabel(deadline: Date | null, now: Date): string | null {
   if (cal === 1) return "due tomorrow";
   if (cal <= 7) return `due in ${cal} days`;
   return `due ${isoHKT(deadline)}`;
+}
+
+// Like deadlineLabel but always expressed in days, even past a week. The board's
+// category tiles want "due in 12 days", not an ISO date. Negative = overdue.
+export function dueInLabel(deadline: Date | null, now: Date): string | null {
+  if (!deadline) return null;
+  const cal = Math.round(
+    (startOfDayHKT(deadline).getTime() - startOfDayHKT(now).getTime()) / DAY
+  );
+  if (cal < 0) return `${-cal}d overdue`;
+  if (cal === 0) return "due today";
+  if (cal === 1) return "due tomorrow";
+  return `due in ${cal} days`;
 }
 
 export function cadenceLabel(cadence: string | null): string | null {

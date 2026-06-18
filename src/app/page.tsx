@@ -1,18 +1,33 @@
 import { prisma } from "@/lib/db";
 import { markDone, remove, retire } from "./actions";
-import { rankActionable, deadlineLabel, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import {
+  rankActionable,
+  deadlineLabel,
+  dueInLabel,
+  CATEGORIES,
+  type Category,
+  type Heat,
+  type Ranked,
+} from "@/lib/rank";
 import { waLink } from "@/lib/waLink";
 
 export const dynamic = "force-dynamic";
 
 const meta = (c: string | null) => (c && c in CATEGORIES ? CATEGORIES[c as Category] : null);
 
+// The ranked feed, split into three pressure bands. Order matters: burning first.
+const HEAT_SECTIONS: { heat: Heat; label: string; icon: string }[] = [
+  { heat: "burning", label: "On fire", icon: "🔥" },
+  { heat: "soon", label: "Heating up", icon: "⏳" },
+  { heat: "later", label: "Back burner", icon: "🧊" },
+];
+
 function Cat({ c }: { c: string | null }) {
   const m = meta(c);
   if (!m) return null;
   return (
     <span className="cat">
-      <span className="dot" style={{ background: m.dot }} />
+      <span className="cat-emoji">{m.icon}</span>
       {m.label}
     </span>
   );
@@ -25,9 +40,14 @@ export default async function Board() {
   const parking = items.filter((i) => i.type === "parking");
 
   const hero = ranked[0] ?? null;
-  const rest = ranked.slice(1);
-  const top = rest.slice(0, 4);
-  const more = rest.slice(4);
+  // Everything below the hero, pre-numbered by overall rank, then split by heat.
+  const numbered = ranked.slice(1).map((r, i) => ({ r, n: i + 2 }));
+  const sections = HEAT_SECTIONS.map((s) => ({
+    ...s,
+    rows: numbered.filter((x) => x.r.heat === s.heat),
+  }));
+
+  const actionable = ranked.map((r) => r.item);
 
   const Row = ({ r, n }: { r: Ranked; n: number }) => {
     const i = r.item;
@@ -61,10 +81,26 @@ export default async function Board() {
 
   return (
     <main className="wrap">
-      <header className="top">
-        <h1>Hermes</h1>
-        <p>{ranked.length} on the list · text the bot to add</p>
-      </header>
+      <section className="cat-grid">
+        {(Object.keys(CATEGORIES) as Category[]).map((cat) => {
+          const m = CATEGORIES[cat];
+          const inCat = actionable.filter((i) => i.category === cat);
+          const dls = inCat.map((i) => i.deadline).filter((d): d is Date => !!d);
+          const soonest = dls.length ? new Date(Math.min(...dls.map((d) => d.getTime()))) : null;
+          const due = dueInLabel(soonest, now);
+          return (
+            <div className="cat-tile" key={cat} style={{ "--c": m.dot } as React.CSSProperties}>
+              <span className="cat-ico">{m.icon}</span>
+              <div className="cat-text">
+                <div className="cat-name">
+                  {m.label} <span className="cat-count">({inCat.length})</span>
+                </div>
+                <div className="cat-due">{due ?? ""}</div>
+              </div>
+            </div>
+          );
+        })}
+      </section>
 
       {hero ? (
         <section className={`hero hero-${hero.heat}`}>
@@ -97,22 +133,22 @@ export default async function Board() {
         <section className="empty-state">Nothing on the list. Text the bot to add something.</section>
       )}
 
-      <div className="feed">
-        {top.map((r, idx) => (
-          <Row key={r.item.id} r={r} n={idx + 2} />
-        ))}
-      </div>
-
-      {more.length ? (
-        <details className="more">
-          <summary>Show all {ranked.length}</summary>
-          <div className="feed">
-            {more.map((r, idx) => (
-              <Row key={r.item.id} r={r} n={idx + 6} />
-            ))}
-          </div>
-        </details>
-      ) : null}
+      {sections.map((s) =>
+        s.rows.length ? (
+          <section className={`sec sec-${s.heat}`} key={s.heat}>
+            <h2 className="sec-head">
+              <span className="sec-ico">{s.icon}</span>
+              {s.label}
+              <span className="sec-count">{s.rows.length}</span>
+            </h2>
+            <div className="feed">
+              {s.rows.map(({ r, n }) => (
+                <Row key={r.item.id} r={r} n={n} />
+              ))}
+            </div>
+          </section>
+        ) : null
+      )}
 
       {parking.length ? (
         <details className="parking">

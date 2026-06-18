@@ -1,16 +1,19 @@
 :root {
-  --bg: #0e0f13;
-  --panel: #161823;
-  --panel-2: #1d2030;
-  --line: #272b3a;
-  --text: #e8eaf0;
-  --muted: #969cb2;
-  --faint: #6b7088;
-  --burn: #a32d2d;
-  --burn-2: #c0392b;
-  --burn-text: #f7c1c1;
-  --soon: #ffb454;
-  --done: #3ecf8e;
+  --bg: #f4f6fb;
+  --panel: #ffffff;
+  --panel-2: #eef1f7;
+  --line: #e5e9f2;
+  --text: #1b1e2b;
+  --muted: #6c7387;
+  --faint: #9aa1b6;
+  --burn: #e5484d;
+  --burn-2: #cf3a3f;
+  --burn-soft: #fdecec;
+  --burn-text: #b4282d;
+  --soon: #ef9b1a;
+  --soon-text: #b9760a;
+  --done: #16b074;
+  --shadow: 0 1px 2px rgba(20, 25, 50, 0.05), 0 6px 18px rgba(20, 25, 50, 0.05);
 }
 
 * {
@@ -32,26 +35,71 @@ body {
   padding: 28px 18px 64px;
 }
 
-.top {
-  margin-bottom: 18px;
+/* Category grid: one tile per category, count + soonest deadline */
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 22px;
 }
-.top h1 {
-  font-size: 22px;
-  letter-spacing: 0.3px;
-  margin: 0;
+@media (min-width: 560px) {
+  .cat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
-.top p {
+
+.cat-tile {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.cat-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--c) 16%, #fff);
+}
+
+.cat-text {
+  min-width: 0;
+}
+.cat-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cat-count {
+  color: var(--faint);
+  font-weight: 500;
+}
+.cat-due {
+  font-size: 11.5px;
   color: var(--muted);
-  font-size: 13px;
-  margin: 4px 0 0;
+  margin-top: 2px;
+  min-height: 14px;
 }
 
 /* Hero: the one burning thing */
 .hero {
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 18px 20px;
-  margin-bottom: 16px;
+  margin-bottom: 22px;
+  box-shadow: var(--shadow);
 }
 .hero-burning {
   background: var(--burn);
@@ -69,10 +117,10 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-bottom: 6px;
-  color: var(--soon);
+  color: var(--soon-text);
 }
 .hero-burning .hero-kicker {
-  color: var(--burn-text);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .hero-title {
@@ -96,7 +144,7 @@ body {
 .hero-burning .hero-meta,
 .hero-burning .hero-meta .cat,
 .hero-burning .hero-meta .dl {
-  color: var(--burn-text);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .hero-actions {
@@ -108,42 +156,77 @@ body {
 
 .done-lg {
   background: var(--done);
-  color: #07251a;
+  color: #04241a;
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 9px 18px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
 .done-lg:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.06);
 }
 
 .tell {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.16);
   color: #fff;
-  border-radius: 9px;
+  border-radius: 10px;
   padding: 9px 16px;
   font-size: 14px;
   text-decoration: none;
 }
 .tell:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.26);
 }
 
 .retire-lg {
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 9px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   padding: 9px 14px;
   font-size: 14px;
   cursor: pointer;
 }
 .retire-lg:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+.hero-burning .retire-lg {
+  color: rgba(255, 255, 255, 0.75);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.hero-burning .retire-lg:hover {
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Heat sections */
+.sec {
+  margin-bottom: 20px;
+}
+.sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 10px 2px;
+}
+.sec-ico {
+  font-size: 15px;
+}
+.sec-count {
+  color: var(--faint);
+  font-weight: 500;
+}
+.sec-burning .sec-head {
+  color: var(--burn-text);
+}
+.sec-soon .sec-head {
+  color: var(--soon-text);
 }
 
 /* Ranked rows */
@@ -159,11 +242,12 @@ body {
   gap: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 11px 13px;
+  box-shadow: var(--shadow);
 }
 .row.heat-burning {
-  border-left: 3px solid var(--burn-2);
+  border-left: 3px solid var(--burn);
 }
 .row.heat-soon {
   border-left: 3px solid var(--soon);
@@ -196,25 +280,21 @@ body {
 .cat {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
 }
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+.cat-emoji {
+  font-size: 13px;
 }
 
 .dl {
   color: var(--muted);
 }
 .dl-burning {
-  color: #ff9a9a;
+  color: var(--burn);
 }
 .dl-soon {
-  color: var(--soon);
+  color: var(--soon-text);
 }
 
 .ref {
@@ -226,7 +306,7 @@ body {
   flex-shrink: 0;
 }
 .ref-hero {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   color: #fff;
 }
 
@@ -236,13 +316,14 @@ body {
   color: var(--done);
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 14px;
   cursor: pointer;
   flex-shrink: 0;
 }
 .done:hover {
   border-color: var(--done);
+  background: color-mix(in srgb, var(--done) 9%, #fff);
 }
 
 .del {
@@ -258,14 +339,9 @@ body {
 }
 
 /* Expanders */
-.more,
-.parking {
-  margin-top: 12px;
-}
 .parking {
   margin-top: 18px;
 }
-.more > summary,
 .parking > summary {
   list-style: none;
   cursor: pointer;
@@ -274,13 +350,11 @@ body {
   padding: 10px;
   text-align: center;
   border: 1px dashed var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
 }
-.more > summary::-webkit-details-marker,
 .parking > summary::-webkit-details-marker {
   display: none;
 }
-.more[open] > summary,
 .parking[open] > summary {
   margin-bottom: 8px;
 }
@@ -291,10 +365,11 @@ body {
 .empty-state {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 22px;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
-  margin-bottom: 16px;
+  margin-bottom: 22px;
+  box-shadow: var(--shadow);
 }
