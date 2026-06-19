@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
+import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
 
@@ -113,8 +114,23 @@ export async function POST(req: NextRequest) {
 
   const msg = update?.message;
   const chatId = msg?.chat?.id;
-  const text: string = (msg?.text ?? "").trim();
-  if (!chatId || !text) return ok();
+  if (!chatId) return ok();
+
+  let text: string = (msg?.text ?? "").trim();
+
+  // Voice note: transcribe it, then treat the transcript like any typed message.
+  // Echo back what we heard so a bad transcription is visible before it acts.
+  if (!text && msg?.voice?.file_id) {
+    try {
+      text = await transcribeVoice(msg.voice.file_id);
+    } catch {
+      await sendMessage(chatId, "Couldn't make out that voice note. Try again or type it.");
+      return ok();
+    }
+    if (text) await sendMessage(chatId, `🎙️ Heard: "${text}"`);
+  }
+
+  if (!text) return ok();
 
   // Single user: remember who is talking so the cron knows where to nudge.
   await rememberOwner(chatId);
