@@ -4,6 +4,7 @@ import {
   rankActionable,
   deadlineLabel,
   cadenceLabel,
+  commitmentDueLabel,
   heatOf,
   daysOverdue,
   isCritical,
@@ -45,7 +46,7 @@ function escalationDraft(it: Item, now: Date): string {
 function metaLine(it: Item, now: Date, withReferee: boolean): string {
   return [
     catLabel(it.category),
-    deadlineLabel(it.deadline, now),
+    it.type === "commitment" ? commitmentDueLabel(it, now) : deadlineLabel(it.deadline, now),
     it.type === "commitment" ? cadenceLabel(it.cadence) : null,
     withReferee && it.referee ? `referee: ${it.referee}` : null,
   ]

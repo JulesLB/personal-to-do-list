@@ -6,6 +6,8 @@ import {
   isCritical,
   promisedToday,
   rankActionable,
+  commitmentDue,
+  commitmentDueLabel,
 } from "../src/lib/rank";
 import { make, NOW, daysAgo, daysAhead } from "./factory";
 
@@ -104,5 +106,34 @@ describe("rankActionable", () => {
       make({ id: 3, important: true, urgent: true, deadline: daysAhead(-1) }),
     ];
     expect(rankActionable(items, NOW).map((r) => r.item.id)).toEqual([3, 1]);
+  });
+});
+
+describe("commitmentDue (calendar-accurate)", () => {
+  const at9 = (iso: string) => new Date(`${iso}T09:00:00+08:00`);
+  const due = (lastDoneAt: Date, cadence: string) =>
+    commitmentDue(make({ type: "commitment", cadence, lastDoneAt })).toISOString();
+
+  it("monthly keeps the same day next month", () => {
+    expect(due(at9("2026-06-19"), "monthly")).toBe(at9("2026-07-19").toISOString());
+  });
+
+  it("monthly clamps to the last day of a short month", () => {
+    expect(due(at9("2026-01-31"), "monthly")).toBe(at9("2026-02-28").toISOString());
+  });
+
+  it("monthly rolls over the year in December", () => {
+    expect(due(at9("2026-12-15"), "monthly")).toBe(at9("2027-01-15").toISOString());
+  });
+
+  it("weekly lands on the same weekday seven days on", () => {
+    expect(due(at9("2026-06-19"), "weekly")).toBe(at9("2026-06-26").toISOString());
+  });
+
+  it("labels an overdue monthly with its date and days late", () => {
+    const c = make({ type: "commitment", cadence: "monthly", lastDoneAt: at9("2026-04-09") });
+    const label = commitmentDueLabel(c, NOW);
+    expect(label).toContain("due 9 May");
+    expect(label).toContain("overdue");
   });
 });
