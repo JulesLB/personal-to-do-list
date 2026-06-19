@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { snoozeUntil, isSnoozePreset } from "@/lib/snooze";
 
 export async function markDone(id: number) {
   const item = await prisma.item.findUnique({ where: { id } });
@@ -55,5 +56,27 @@ export async function updateItem(id: number, formData: FormData) {
 
 export async function remove(id: number) {
   await prisma.item.delete({ where: { id } });
+  revalidatePath("/");
+}
+
+// Defer with intent. Clearing lastNudgedAt lets the next sweep treat the
+// resurfacing as a fresh nudge rather than an ignore.
+export async function snoozeItem(id: number, preset: string) {
+  if (!isSnoozePreset(preset)) return;
+  await prisma.item.update({
+    where: { id },
+    data: { snoozeUntil: snoozeUntil(preset, new Date()), lastNudgedAt: null },
+  });
+  await prisma.event.create({ data: { itemId: id, kind: "snoozed" } });
+  revalidatePath("/");
+}
+
+// Promote a parked idea into an actionable task: important by default so it
+// lands in the ranked list with teeth. Add a deadline from the edit modal.
+export async function promote(id: number) {
+  await prisma.item.update({
+    where: { id },
+    data: { type: "task", important: true, snoozeUntil: null },
+  });
   revalidatePath("/");
 }

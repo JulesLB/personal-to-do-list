@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
+import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,21 @@ export async function POST(req: NextRequest) {
   if (cb) {
     const cbChatId = cb.message?.chat?.id;
     if (cbChatId) await rememberOwner(cbChatId);
+
+    // Snooze presets from the calm nudge keyboard: snz:<id>:<preset>.
+    const snz = String(cb.data ?? "").match(/^snz:(\d+):(\w+)$/);
+    if (snz && isSnoozePreset(snz[2])) {
+      const id = Number(snz[1]);
+      await prisma.item
+        .update({
+          where: { id },
+          data: { snoozeUntil: snoozeUntil(snz[2], new Date()), lastNudgedAt: null },
+        })
+        .catch(() => {});
+      await logEvent(id, "snoozed");
+      await answerCallback(cb.id, `Snoozed to ${snoozeLabel(snz[2])}.`);
+      return ok();
+    }
 
     const m: RegExpMatchArray | null = String(cb.data ?? "").match(/^(done|today|snooze):(\d+)$/);
     if (m) {

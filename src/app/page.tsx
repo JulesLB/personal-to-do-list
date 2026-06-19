@@ -1,9 +1,10 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { markDone, remove, retire } from "./actions";
+import { markDone, remove, retire, promote } from "./actions";
 import { rankActionable, dueInLabel, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { waLink } from "@/lib/waLink";
 import { EditModal, type EditableItem } from "./EditModal";
+import { SnoozeMenu } from "./SnoozeMenu";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export default async function Board({
           <form action={markDone.bind(null, i.id)}>
             <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
           </form>
+          <SnoozeMenu id={i.id} />
           <EditModal item={toEditable(i)} />
           {i.type === "commitment" ? (
             <form action={retire.bind(null, i.id)}>
@@ -127,6 +129,7 @@ export default async function Board({
                 Tell {hero.item.referee}
               </a>
             ) : null}
+            <SnoozeMenu id={hero.item.id} />
             <EditModal item={toEditable(hero.item)} />
             {hero.item.type === "commitment" ? (
               <form action={retire.bind(null, hero.item.id)}>
@@ -197,6 +200,9 @@ export default async function Board({
                   </div>
                 </div>
                 <div className="row-actions">
+                  <form action={promote.bind(null, i.id)}>
+                    <button className="promote" title="Promote to a task">↑ Task</button>
+                  </form>
                   <EditModal item={toEditable(i)} />
                   <form action={remove.bind(null, i.id)}>
                     <button className="del" aria-label="drop">×</button>
