@@ -52,7 +52,7 @@ export type OpenItemLite = {
   deadline: string | null;
 };
 
-const SYSTEM = `You are Hermes, a personal accountability agent for Jules. You read one messy line and decide what he wants done, then return it through the route tool.
+const SYSTEM = `You are Ember, a personal accountability agent for Jules. You read one messy line and decide what he wants done, then return it through the route tool.
 
 What you know about Jules:
 - His problem is follow-through, not capture. Every item should end up with teeth: a deadline, a referee, or both.

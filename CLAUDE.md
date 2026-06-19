@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Hermes — a single-user accountability engine. You text a Telegram bot what you commit to;
+Ember (formerly Hermes) — a single-user accountability engine. You text a Telegram bot what you commit to;
 Claude classifies it into a structured item; a pressure score ranks everything; two daily Vercel
 crons (a morning nudge and an evening honesty check) push the most pressing task; ignoring it long
 enough surfaces a pre-drafted WhatsApp message to a "referee" (wife/sister/colleague). A
@@ -127,27 +127,31 @@ Two once-daily jobs fit the Vercel Hobby limit.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
-`remove`, `updateItem`, `snoozeItem`, `promote`). Layout top to bottom: a row of
-category filter chips (a colored dot, the label, and the open count per area), the burning hero
-(`#1`), then the rest split into three heat bands — "On fire" (always shown) / "Heating up" (open by
-default) / "Back burner" (collapsed) — and a collapsed parking lot, each band a `<details>` with its
-count in brackets. Clicking a chip sets `?cat=<key>` and filters the hero, bands, and parking lot to
-that category; the chip counts stay global so you can switch, and clicking the active chip clears the
-filter. The page reads the filter from the awaited `searchParams` (Next 15 async). Category renders
-as a small colored dot-pill on both the chips and each row; task deadlines render via `dueInLabel`
-("due in 10 days", in days even past a week) and commitments show their computed due date + cadence
-via `commitmentDueLabel`. Rows are no longer numbered. Each row/hero has inline actions: done, a
-snooze-preset menu ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)), and an edit modal
-([src/app/EditModal.tsx](src/app/EditModal.tsx), the one client component) that can change any
-classified field; commitments also get retire, parking items get a one-tap "promote to task".
-Protected by [src/middleware.ts](src/middleware.ts), which checks an
-`app_auth` cookie against `APP_SECRET`; `/login`, `/api`, and assets are left open. `/api/login` sets
-the cookie. Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css).
+`remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **sticky** filter bar of the six
+categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
+**hero** (`#1`) on its own card, then the rest as **separate, heat-tinted band cards** — "On fire"
+(always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking lot"
+(collapsed), the collapsible ones a `<details>` with its count. Clicking a chip sets `?cat=<key>` and
+filters the hero + bands; the chip counts stay global; clicking the active chip clears the filter
+(there is no logo/reset control). The page reads the filter from the awaited `searchParams` (Next 15
+async). Category renders as a colored dot-pill; task deadlines render via `dueInLabel` ("due in 10
+days", in days even past a week) and commitments show their computed due date + cadence via
+`commitmentDueLabel`. **Tap a row or the hero body to edit** — the edit panel
+([src/app/EditTrigger.tsx](src/app/EditTrigger.tsx), a client component) opens on the body click, so
+there is no edit button; it changes any classified field and holds the destructive action behind a
+tap-to-confirm (delete for tasks/parking, retire for commitments). Rows otherwise show only the done
+tick; the **snooze-preset menu** ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)) lives on the hero
+alone. Parking has no promote button: giving a parked item a **deadline** in the edit panel
+auto-promotes it to a task (in `updateItem`). Branded **Ember** — favicon at
+[src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
+[src/middleware.ts](src/middleware.ts), which checks an `app_auth` cookie against `APP_SECRET`;
+`/login`, `/api`, and assets are left open. `/api/login` sets the cookie. Styling is a light,
+card-based theme in [src/app/globals.css](src/app/globals.css).
 
 ## Conventions
 
 - The six categories are defined once in `CATEGORIES` in [src/lib/rank.ts](src/lib/rank.ts), each
-  with a display `label` (e.g. business → "The Build") and a `dot` color (the board renders category
+  with a single-word display `label` (e.g. business → "Build") and a `dot` color (the board renders category
   as a colored dot-pill). The underlying category keys (`personal`, `finance`, …) are what `classify`
   emits; the labels are display-only. The `Category` union is duplicated in `rank.ts` and
   `classify.ts` — keep them in sync if you add one.

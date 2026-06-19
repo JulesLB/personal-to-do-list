@@ -13,7 +13,23 @@ export default async function Login({
         fontFamily: "system-ui, sans-serif",
       }}
     >
-      <h1 style={{ fontSize: 20, letterSpacing: 1 }}>HERMES</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Ember" width={36} height={36} style={{ borderRadius: 9 }} />
+        <h1
+          style={{
+            fontSize: 22,
+            fontWeight: 700,
+            margin: 0,
+            background: "linear-gradient(95deg, #ffb02e, #ff6a18 55%, #e0301e)",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+          }}
+        >
+          Ember
+        </h1>
+      </div>
       <p style={{ color: "#969cb2", fontSize: 14 }}>Enter your access key.</p>
       <form action="/api/login" method="post">
         <input

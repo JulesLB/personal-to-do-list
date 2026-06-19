@@ -35,23 +35,39 @@ body {
   padding: 28px 18px 64px;
 }
 
-/* Top filter row: one compact dot-pill per category */
-.cat-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 22px;
+/* Sticky filter bar: the six categories as equal-width chips. Three per row on
+   mobile (two rows), six across on wider screens. Sticks to the top on scroll and
+   breaks out of the wrap gutters so the blurred bar spans full width. */
+.filters {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 0 -18px 18px;
+  padding: 11px 18px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+@media (min-width: 560px) {
+  .filters {
+    grid-template-columns: repeat(6, 1fr);
+  }
 }
 
 .cat-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: center;
+  gap: 6px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12.5px;
+  padding: 6px 8px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text);
   text-decoration: none;
@@ -66,8 +82,14 @@ body {
   border-color: var(--c);
   font-weight: 600;
 }
+.cat-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .cat-chip-count {
   color: var(--faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .cat-chip.active .cat-chip-count {
   color: var(--muted);
@@ -82,14 +104,21 @@ body {
   flex-shrink: 0;
 }
 
-/* Hero: the one burning thing */
+/* Hero: the one burning thing. Body on the left, Done + Snooze on the right. */
 .hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 18px 20px;
   margin-bottom: 22px;
   box-shadow: var(--shadow);
+}
+.hero-left {
+  flex: 1;
+  min-width: 0;
 }
 .hero-burning {
   background: var(--burn);
@@ -140,11 +169,39 @@ body {
   color: #fff;
 }
 
+/* The hero body is tappable to edit; subtle affordance, no extra button. */
+.hero-body {
+  cursor: pointer;
+  border-radius: 10px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  outline: none;
+}
+.hero-body:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.hero-burning .hero-body:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.hero-body:focus-visible {
+  box-shadow: 0 0 0 2px var(--soon);
+}
+
 .hero-actions {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 76px;
+}
+.hero-actions form {
+  display: flex;
+}
+.hero-actions .done-lg,
+.hero-actions .snz,
+.hero-actions .snz-btn {
+  width: 100%;
 }
 
 .done-lg {
@@ -170,104 +227,94 @@ body {
   filter: none;
 }
 
-.tell {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  border-radius: 10px;
-  padding: 9px 16px;
-  font-size: 14px;
-  text-decoration: none;
-}
-.tell:hover {
-  background: rgba(255, 255, 255, 0.26);
-}
-
-.retire-lg {
-  background: transparent;
-  color: var(--muted);
+/* Each heat band is its own separate card. */
+.band {
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 14px;
-  font-size: 14px;
-  cursor: pointer;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+  overflow: hidden;
 }
-.retire-lg:hover {
-  color: var(--text);
-  border-color: var(--faint);
-}
-.hero-burning .retire-lg {
-  color: rgba(255, 255, 255, 0.75);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-.hero-burning .retire-lg:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-/* Heat sections (some are <details> expanders) */
-.sec {
-  margin-bottom: 18px;
-}
-.sec-head {
+.band-head {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 0 0 10px 2px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 12px 15px 9px;
+  margin: 0;
 }
-summary.sec-head {
+summary.band-head {
   list-style: none;
   cursor: pointer;
 }
-summary.sec-head::-webkit-details-marker {
+summary.band-head::-webkit-details-marker {
   display: none;
 }
-summary.sec-head::after {
+summary.band-head::after {
   content: "▾";
-  margin-left: auto;
+  margin-left: 8px;
   font-size: 11px;
   color: var(--faint);
   transition: transform 0.15s ease;
 }
-details[open] > summary.sec-head::after {
+details.band[open] > summary.band-head::after {
   transform: rotate(180deg);
 }
-.sec-ico {
-  font-size: 15px;
+.band-ico {
+  font-size: 14px;
 }
-.sec-count {
+.band-count {
+  margin-left: auto;
   color: var(--faint);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
-.sec-burning .sec-head {
+.band-burning .band-head {
   color: var(--burn-text);
 }
-.sec-soon .sec-head {
+.band-soon .band-head {
   color: var(--soon-text);
 }
-.sec-later .sec-head,
-.sec-parking .sec-head {
-  color: var(--muted);
+
+/* Each band carries a faint heat tint so the temperature reads at a glance:
+   warm red on fire, amber heating up, cool blue on the back burner, a neutral
+   lavender for parked ideas. Rows inside stay white so they stand out. */
+.band-burning {
+  background: #fdeee8;
+  border-color: #f6d6cb;
+}
+.band-soon {
+  background: #fff6df;
+  border-color: #f3e4b6;
+}
+.band-later {
+  background: #eef3fb;
+  border-color: #d8e3f3;
+}
+.band-parking {
+  background: #f1eff8;
+  border-color: #e0dcef;
 }
 
-/* Ranked rows */
+/* Rows are white sub-boxes that sit on the tinted band. */
 .feed {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 0 10px 12px;
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: var(--panel);
+  gap: 10px;
+  background: #fff;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 11px 14px;
-  box-shadow: var(--shadow);
+  border-radius: 10px;
+  padding: 9px 11px;
 }
 .row.heat-burning {
   border-left: 3px solid var(--burn);
@@ -276,9 +323,19 @@ details[open] > summary.sec-head::after {
   border-left: 3px solid var(--soon);
 }
 
+/* Tap the row body to edit; cursor hints it, action buttons sit outside it. */
 .row-main {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+  border-radius: 8px;
+  outline: none;
+}
+.row-main:hover {
+  background: rgba(20, 25, 50, 0.03);
+}
+.row-main:focus-visible {
+  box-shadow: 0 0 0 2px var(--soon);
 }
 .row-title {
   font-size: 14.5px;
@@ -293,16 +350,19 @@ details[open] > summary.sec-head::after {
   font-size: 12px;
 }
 
-/* Category pill: colored dot + label, same look as the top filter chips */
+/* Category pill: colored dot + label. Stronger tint, category-colored text and
+   a faint colored border so it reads clearly against the light rows. */
 .cat {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: color-mix(in srgb, var(--c) 13%, #fff);
-  color: #3a3f4d;
+  background: color-mix(in srgb, var(--c) 18%, #fff);
+  color: color-mix(in srgb, var(--c) 68%, #14161f);
+  border: 1px solid color-mix(in srgb, var(--c) 32%, #fff);
   padding: 2px 9px 2px 8px;
   border-radius: 999px;
   white-space: nowrap;
+  font-weight: 500;
 }
 
 .dl {
@@ -335,9 +395,11 @@ details[open] > summary.sec-head::after {
   flex-shrink: 0;
 }
 
+/* Light-green fill so the only row button reads clearly as "tap to complete"
+   against the white rows. */
 .done {
-  background: transparent;
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--done) 12%, #fff);
+  border: 1px solid color-mix(in srgb, var(--done) 35%, #fff);
   color: var(--done);
   width: 32px;
   height: 32px;
@@ -347,22 +409,10 @@ details[open] > summary.sec-head::after {
 }
 .done:hover {
   border-color: var(--done);
-  background: color-mix(in srgb, var(--done) 9%, #fff);
+  background: color-mix(in srgb, var(--done) 20%, #fff);
 }
 
-.del {
-  background: transparent;
-  border: none;
-  color: var(--faint);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 0 4px;
-}
-.del:hover {
-  color: var(--text);
-}
-
-.sec-parking .row-title {
+.band-parking .row-title {
   color: var(--muted);
 }
 
@@ -376,36 +426,6 @@ details[open] > summary.sec-head::after {
   font-size: 14px;
   margin-bottom: 22px;
   box-shadow: var(--shadow);
-}
-
-/* Edit affordance: small icon button on rows, sized up inside the hero */
-.edit-btn {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.edit-btn:hover {
-  border-color: var(--faint);
-  color: var(--text);
-}
-.hero-actions .edit-btn {
-  width: auto;
-  height: auto;
-  padding: 9px 14px;
-  border-radius: 10px;
-}
-.hero-burning .edit-btn {
-  color: rgba(255, 255, 255, 0.75);
-  border-color: rgba(255, 255, 255, 0.3);
-}
-.hero-burning .edit-btn:hover {
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* Edit modal */
@@ -479,9 +499,34 @@ details[open] > summary.sec-head::after {
 }
 .ef-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   margin-top: 4px;
+}
+.ef-actions-right {
+  display: flex;
+  gap: 10px;
+}
+/* Destructive action lives in the panel, left of Cancel/Save. Tap to arm, tap
+   again to confirm. Delete for tasks/parking, Retire for commitments. */
+.ef-danger {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--burn-text);
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ef-danger:hover {
+  border-color: var(--burn);
+  background: var(--burn-soft);
+}
+.ef-danger.armed {
+  background: var(--burn);
+  border-color: var(--burn);
+  color: #fff;
 }
 .ef-save {
   background: var(--done);
@@ -521,8 +566,9 @@ details[open] > summary.sec-head::after {
   position: relative;
   display: inline-flex;
 }
+/* White fill so the snooze control shows against the grey row chips. */
 .snz-btn {
-  background: transparent;
+  background: #fff;
   border: 1px solid var(--line);
   color: var(--muted);
   width: 32px;
@@ -535,14 +581,19 @@ details[open] > summary.sec-head::after {
   border-color: var(--faint);
 }
 .hero-actions .snz-btn {
-  width: auto;
+  width: 100%;
   height: auto;
   padding: 9px 14px;
   border-radius: 10px;
 }
+/* On the red hero, Snooze is a solid white pill like Done so it stays legible. */
 .hero-burning .snz-btn {
-  color: rgba(255, 255, 255, 0.75);
-  border-color: rgba(255, 255, 255, 0.3);
+  background: #fff;
+  color: var(--burn-text);
+  border-color: transparent;
+}
+.hero-burning .snz-btn:hover {
+  background: rgba(255, 255, 255, 0.88);
 }
 .snz-backdrop {
   position: fixed;
@@ -577,20 +628,4 @@ details[open] > summary.sec-head::after {
 }
 .snz-opt:hover {
   background: var(--panel-2);
-}
-
-/* Promote a parked idea into a task */
-.promote {
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  border-radius: 9px;
-  padding: 6px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.promote:hover {
-  color: var(--text);
-  border-color: var(--faint);
 }
