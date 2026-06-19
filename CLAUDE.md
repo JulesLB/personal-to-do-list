@@ -115,6 +115,11 @@ than touching the wrong item; every change is echoed back. `done` routes through
 (commitment-aware, see above) and logs a `done` Event; `today:` sets `promisedAt` (deliberately *not*
 a snooze, so the evening sweep can catch it still open) and logs `promised`. Deadlines are stored at
 `09:00 HKT` (`T09:00:00+08:00`).
+**Voice notes** are a second input: a message with no text but a `voice.file_id` is downloaded and
+transcribed by `transcribeVoice` ([src/lib/voice.ts](src/lib/voice.ts)) via OpenAI Whisper
+(`whisper-1`, the only non-Anthropic model call, keyed by `OPENAI_API_KEY`), the transcript is echoed
+back (`🎙️ Heard: "…"`) so a bad transcription is visible, then fed into the exact same `interpret`
+path — so every create/update/snooze flow works by voice with no downstream change.
 Auth is the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET`. Always returns
 200 (even on internal error) so Telegram doesn't retry.
 
