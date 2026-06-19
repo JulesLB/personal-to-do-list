@@ -29,7 +29,7 @@ const HK_OFFSET = 8 * 60 * 60 * 1000;
 const startOfDayHKT = (d: Date) =>
   new Date(Math.floor((d.getTime() + HK_OFFSET) / DAY) * DAY - HK_OFFSET);
 
-const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
+export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
 
 // Did you tap "I'll do it today" earlier today (HKT)? The evening check uses
 // this to call out a promise you made this morning and haven't kept.

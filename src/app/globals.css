@@ -377,3 +377,141 @@ details[open] > summary.sec-head::after {
   margin-bottom: 22px;
   box-shadow: var(--shadow);
 }
+
+/* Edit affordance: small icon button on rows, sized up inside the hero */
+.edit-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.edit-btn:hover {
+  border-color: var(--faint);
+  color: var(--text);
+}
+.hero-actions .edit-btn {
+  width: auto;
+  height: auto;
+  padding: 9px 14px;
+  border-radius: 10px;
+}
+.hero-burning .edit-btn {
+  color: rgba(255, 255, 255, 0.75);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.hero-burning .edit-btn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Edit modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(20, 25, 50, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.modal {
+  width: 100%;
+  max-width: 460px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(20, 25, 50, 0.25);
+}
+.modal-head {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ef-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ef-field input,
+.ef-field select {
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.ef-field input:focus,
+.ef-field select:focus {
+  outline: none;
+  border-color: var(--faint);
+}
+.ef-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ef-flags {
+  display: flex;
+  gap: 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+.ef-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.ef-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.ef-save {
+  background: var(--done);
+  color: #04241a;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ef-save:hover {
+  filter: brightness(1.06);
+}
+.ef-cancel {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ef-cancel:hover {
+  color: var(--text);
+  border-color: var(--faint);
+}
+
+@media (max-width: 480px) {
+  .ef-grid {
+    grid-template-columns: 1fr;
+  }
+}

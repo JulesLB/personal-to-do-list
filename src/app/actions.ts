@@ -30,6 +30,29 @@ export async function retire(id: number) {
   revalidatePath("/");
 }
 
+// Edit any field Claude guessed. Deadlines are stored at 09:00 HKT to match the
+// rest of the app. Empty selects/date clear the field; a blank title is ignored
+// so a stray submit can't wipe the item.
+export async function updateItem(id: number, formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return;
+  const deadlineStr = String(formData.get("deadline") ?? "");
+  await prisma.item.update({
+    where: { id },
+    data: {
+      title,
+      type: String(formData.get("type") || "task"),
+      category: String(formData.get("category") || "") || null,
+      referee: String(formData.get("referee") || "") || null,
+      cadence: String(formData.get("cadence") || "") || null,
+      important: formData.get("important") != null,
+      urgent: formData.get("urgent") != null,
+      deadline: deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null,
+    },
+  });
+  revalidatePath("/");
+}
+
 export async function remove(id: number) {
   await prisma.item.delete({ where: { id } });
   revalidatePath("/");

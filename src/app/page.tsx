@@ -1,11 +1,25 @@
+import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { markDone, remove, retire } from "./actions";
-import { rankActionable, dueInLabel, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { rankActionable, dueInLabel, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { waLink } from "@/lib/waLink";
+import { EditModal, type EditableItem } from "./EditModal";
 
 export const dynamic = "force-dynamic";
 
 const meta = (c: string | null) => (c && c in CATEGORIES ? CATEGORIES[c as Category] : null);
+
+const toEditable = (i: Item): EditableItem => ({
+  id: i.id,
+  title: i.title,
+  type: i.type,
+  category: i.category,
+  important: i.important,
+  urgent: i.urgent,
+  deadline: i.deadline ? isoHKT(i.deadline) : null,
+  referee: i.referee,
+  cadence: i.cadence,
+});
 
 // A small colored-dot pill: same look on the top filter row and on each task.
 function Cat({ c }: { c: string | null }) {
@@ -56,6 +70,7 @@ export default async function Board({
           <form action={markDone.bind(null, i.id)}>
             <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
           </form>
+          <EditModal item={toEditable(i)} />
           {i.type === "commitment" ? (
             <form action={retire.bind(null, i.id)}>
               <button className="del" aria-label="retire commitment" title="Retire for good">×</button>
@@ -112,6 +127,7 @@ export default async function Board({
                 Tell {hero.item.referee}
               </a>
             ) : null}
+            <EditModal item={toEditable(hero.item)} />
             {hero.item.type === "commitment" ? (
               <form action={retire.bind(null, hero.item.id)}>
                 <button className="retire-lg" title="Retire this commitment for good">Retire</button>
@@ -181,6 +197,7 @@ export default async function Board({
                   </div>
                 </div>
                 <div className="row-actions">
+                  <EditModal item={toEditable(i)} />
                   <form action={remove.bind(null, i.id)}>
                     <button className="del" aria-label="drop">×</button>
                   </form>
