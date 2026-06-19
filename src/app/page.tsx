@@ -1,9 +1,10 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { markDone } from "./actions";
 import { rankActionable, sortByDate, dueInLabel, dueTone, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { SnoozeMenu } from "./SnoozeMenu";
+import { BurnButton } from "./BurnButton";
+import { currentStreak } from "@/lib/streak";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,13 @@ export default async function Board({
 
   const now = new Date();
   const allOpen = await prisma.item.findMany({ where: { status: "open" } });
+  // The streak reads done Events (cleared a fire) and every item's due date
+  // (a fire was due that day), so it needs the full table, not just open items.
+  const [allItems, dones] = await Promise.all([
+    prisma.item.findMany(),
+    prisma.event.findMany({ where: { kind: "done" }, select: { createdAt: true } }),
+  ]);
+  const streak = currentStreak(allItems, dones, now);
   const countFor = (c: Category) =>
     allOpen.filter((i) => i.type !== "parking" && i.category === c).length;
 
@@ -82,7 +90,7 @@ export default async function Board({
     const i = r.item;
     const due = dueOf(i);
     return (
-      <div className={`row tone-${dueTone(i, now)}`}>
+      <div className={`row tone-${dueTone(i, now)}`} data-burnable>
         <EditTrigger item={toEditable(i)} className="row-main">
           <div className="row-title">{i.title}</div>
           <div className="row-meta">
@@ -93,9 +101,7 @@ export default async function Board({
           </div>
         </EditTrigger>
         <div className="row-actions">
-          <form action={markDone.bind(null, i.id)}>
-            <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
-          </form>
+          <BurnButton id={i.id} variant="row" commitment={i.type === "commitment"} />
         </div>
       </div>
     );
@@ -146,14 +152,78 @@ export default async function Board({
     );
   };
 
-  // On fire stays in score order (importance leads when something's burning); the
-  // calmer bands read in plain date order so they're not a jumble of mixed dates.
+  // Every band uses the one order: soonest due date first, importance breaking
+  // ties on the same day. burning already comes pre-sorted from rankActionable.
   const burning = inHeat("burning");
   const soon = sortByDate(inHeat("soon"));
   const later = sortByDate(inHeat("later"));
 
   return (
     <main className="wrap">
+      {/* Defined once: the fractal-noise filter that distorts the burn-to-ash
+          flames so their edges lick and flicker. Animated via SMIL so the fire
+          keeps moving the whole time a card is alight. Referenced from .igniting
+          in globals.css. */}
+      <svg aria-hidden width="0" height="0" style={{ position: "absolute" }}>
+        <filter
+          id="ember-fire"
+          x="-25%"
+          y="-25%"
+          width="150%"
+          height="150%"
+          colorInterpolationFilters="sRGB"
+        >
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.012 0.026"
+            numOctaves={3}
+            seed={7}
+            result="noise"
+          >
+            <animate
+              attributeName="baseFrequency"
+              dur="0.5s"
+              values="0.012 0.026;0.02 0.05;0.014 0.03;0.012 0.026"
+              repeatCount="indefinite"
+            />
+          </feTurbulence>
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="noise"
+            scale="54"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          >
+            <animate
+              attributeName="scale"
+              dur="0.5s"
+              values="54;70;42;54"
+              repeatCount="indefinite"
+            />
+          </feDisplacementMap>
+        </filter>
+      </svg>
+
+      <header className="topbar">
+        <span className="brand">
+          <img className="brand-logo" src="/logo.png" alt="" width={24} height={24} />
+          <span className="wordmark">Ember</span>
+        </span>
+        <span
+          className={`streak${streak > 0 ? " lit" : ""}`}
+          title="Days in a row you cleared a fire. Quiet days don't break it; ignoring something that's due does."
+        >
+          <span className="streak-flame">{streak > 0 ? "🔥" : "🕯️"}</span>
+          {streak > 0 ? (
+            <>
+              <strong>{streak}</strong> days streak
+            </>
+          ) : (
+            "No streak yet"
+          )}
+        </span>
+      </header>
+
       <nav className="filters">
         {(Object.keys(CATEGORIES) as Category[]).map((c) => {
           const m = CATEGORIES[c];
@@ -174,7 +244,7 @@ export default async function Board({
       </nav>
 
       {hero ? (
-        <section className={`hero hero-${hero.heat}`}>
+        <section className={`hero hero-${hero.heat}`} data-burnable>
           <div className="hero-left">
             <div className="hero-kicker">
               {hero.heat === "burning" ? "🔥 Do this first" : "Top priority"}
@@ -190,9 +260,7 @@ export default async function Board({
             </EditTrigger>
           </div>
           <div className="hero-actions">
-            <form action={markDone.bind(null, hero.item.id)}>
-              <button className="done-lg">Done</button>
-            </form>
+            <BurnButton id={hero.item.id} variant="hero" />
             <SnoozeMenu id={hero.item.id} />
           </div>
         </section>
