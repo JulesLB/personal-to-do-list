@@ -1,9 +1,10 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rankActionable, sortByDate, dueInLabel, dueTone, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { SnoozeMenu } from "./SnoozeMenu";
 import { BurnButton } from "./BurnButton";
+import { AddItem } from "./AddItem";
 import { currentStreak } from "@/lib/streak";
 
 export const dynamic = "force-dynamic";
@@ -89,8 +90,9 @@ export default async function Board({
   const Row = ({ r }: { r: Ranked }) => {
     const i = r.item;
     const due = dueOf(i);
+    const overdue = daysOverdue(i, now) > 0;
     return (
-      <div className={`row tone-${dueTone(i, now)}`} data-burnable>
+      <div className={`row tone-${dueTone(i, now)}${overdue ? " overdue" : ""}`} data-burnable>
         <EditTrigger item={toEditable(i)} className="row-main">
           <div className="row-title">{i.title}</div>
           <div className="row-meta">
@@ -214,14 +216,17 @@ export default async function Board({
           title="Days in a row you cleared a fire. Quiet days don't break it; ignoring something that's due does."
         >
           <span className="streak-flame">{streak > 0 ? "🔥" : "🕯️"}</span>
-          {streak > 0 ? (
-            <>
-              <strong>{streak}</strong> days streak
-            </>
-          ) : (
-            "No streak yet"
-          )}
+          <span className="streak-text">
+            {streak > 0 ? (
+              <>
+                <strong>{streak}</strong> days streak
+              </>
+            ) : (
+              "No streak yet"
+            )}
+          </span>
         </span>
+        <AddItem />
       </header>
 
       <nav className="filters">

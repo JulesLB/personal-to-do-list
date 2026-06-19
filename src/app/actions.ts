@@ -69,6 +69,30 @@ export async function updateItem(id: number, formData: FormData) {
   revalidatePath("/");
 }
 
+// Add an item straight from the board. Same shape as the Telegram create path:
+// type is derived from deadline+cadence, important defaults to true (the death
+// zone rule — anything you bother typing in is assumed to matter until proven
+// otherwise), deadlines stored at 09:00 HKT. A blank title is ignored.
+export async function createItem(formData: FormData) {
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) return;
+  const deadlineStr = String(formData.get("deadline") ?? "");
+  const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
+  const cadence = String(formData.get("cadence") || "") || null;
+  await prisma.item.create({
+    data: {
+      title,
+      type: deriveType(deadline, cadence),
+      category: String(formData.get("category") || "") || null,
+      important: true,
+      deadline,
+      referee: String(formData.get("referee") || "") || null,
+      cadence,
+    },
+  });
+  revalidatePath("/");
+}
+
 export async function remove(id: number) {
   await prisma.item.delete({ where: { id } });
   revalidatePath("/");

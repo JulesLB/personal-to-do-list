@@ -39,34 +39,37 @@ body {
 /* Top bar: the wordmark and the streak. The streak is the retention hook made
    visible — a flame and a day count you don't want to break. It carries the one
    loud color (burn) when lit so it pulls the eye the moment the board opens. */
+/* Three slots: brand left, streak dead-center, add button right. The 1fr edges
+   are equal so the auto-width streak sits in the true page center. */
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 6px 2px 10px;
 }
 .brand {
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.topbar-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
+/* A circle with just a +, matched to the streak chip's height. */
 .add-btn {
+  justify-self: end;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12.5px;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+  padding: 0;
+  font-size: 20px;
   font-weight: 600;
+  line-height: 1;
   color: var(--burn-text);
   background: var(--burn-soft);
   border: 1px solid color-mix(in srgb, var(--burn) 35%, #fff);
-  border-radius: 999px;
-  padding: 5px 13px;
+  border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--shadow);
 }
@@ -84,18 +87,25 @@ body {
   color: var(--text);
 }
 .streak {
+  justify-self: center;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 32px;
   font-size: 12.5px;
   font-weight: 500;
   color: var(--muted);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 5px 11px 5px 9px;
+  padding: 0 12px 0 10px;
   cursor: default;
   box-shadow: var(--shadow);
+}
+/* Number and label in one flex child so the chip's 6px gap sits only between the
+   flame and the text, not between "4" and "days". */
+.streak-text {
+  white-space: nowrap;
 }
 .streak.lit {
   color: var(--burn-text);
@@ -404,6 +414,15 @@ details.band[open] > summary.band-head::after {
    or overdue. Everything calmer carries no bar; urgency lives in the due text. */
 .row.tone-burning {
   border-left: 3px solid var(--burn);
+}
+/* Past due: fill the row light red so overdue items jump out at a glance,
+   not just the left bar. */
+.row.overdue {
+  background: var(--burn-soft);
+  border-color: color-mix(in srgb, var(--burn) 30%, var(--line-strong));
+}
+.row.overdue .row-main:hover {
+  background: color-mix(in srgb, var(--burn) 8%, transparent);
 }
 
 /* Tap the row body to edit; cursor hints it, action buttons sit outside it. */
