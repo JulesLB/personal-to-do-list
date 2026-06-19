@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
-import { classify } from "@/lib/classify";
+import { interpret, type OpenItemLite } from "@/lib/classify";
 
 export const dynamic = "force-dynamic";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const ok = () => NextResponse.json({ ok: true });
+
+// Deadlines live at 09:00 HKT so "due today" never drifts on the UTC server.
+const toDeadline = (d: string | null | undefined) =>
+  d ? new Date(d + "T09:00:00+08:00") : null;
 
 const rememberOwner = (chatId: number | string) =>
   prisma.setting.upsert({
@@ -95,7 +99,7 @@ export async function POST(req: NextRequest) {
     if (lower === "/start") {
       await sendMessage(
         chatId,
-        'Hermes here. Text me anything and I log it. Commands: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
+        'Hermes here. Text me anything and I log it. You can also edit in plain English: "push the dentist to Friday", "the gym thing is weekly", "drop the tax idea", "did the call". Commands still work: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
       );
       return ok();
     }
@@ -158,26 +162,103 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
-    // Default: capture it.
-    const c = await classify(text, todayISO());
+    // Freeform fallback: let Claude decide whether this creates a new item or
+    // edits an existing one, and which. Exact commands above are the fast paths.
+    const open = await prisma.item.findMany({
+      where: { status: "open" },
+      orderBy: { id: "asc" },
+    });
+    const lite: OpenItemLite[] = open.map((i) => ({
+      id: i.id,
+      title: i.title,
+      type: i.type,
+      category: i.category,
+      referee: i.referee,
+      deadline: i.deadline ? i.deadline.toISOString().slice(0, 10) : null,
+    }));
+    const openIds = new Set(open.map((i) => i.id));
+
+    const intent = await interpret(text, todayISO(), lite);
+    const f = intent.fields;
+
+    // Mutations need a real, currently-open target. A missing or hallucinated
+    // id means we ask rather than touch the wrong thing.
+    const needsTarget =
+      intent.action === "update" ||
+      intent.action === "complete" ||
+      intent.action === "snooze" ||
+      intent.action === "retire";
+    if (needsTarget && (!intent.itemId || !openIds.has(intent.itemId))) {
+      await sendMessage(chatId, intent.reply || "Which one? Send `list` to see the ids.");
+      return ok();
+    }
+
+    if (intent.action === "query" || intent.action === "clarify") {
+      await sendMessage(chatId, intent.reply);
+      return ok();
+    }
+
+    if (intent.action === "complete") {
+      await completeItem(intent.itemId!).catch(() => {});
+      await sendMessage(chatId, intent.reply);
+      return ok();
+    }
+
+    if (intent.action === "retire") {
+      await prisma.item
+        .update({ where: { id: intent.itemId! }, data: { status: "retired", doneAt: new Date() } })
+        .catch(() => {});
+      await sendMessage(chatId, intent.reply);
+      return ok();
+    }
+
+    if (intent.action === "snooze") {
+      const days = intent.snoozeDays ?? 1;
+      const until = new Date(Date.now() + days * 86400000);
+      await prisma.item
+        .update({ where: { id: intent.itemId! }, data: { snoozeUntil: until, lastNudgedAt: null } })
+        .catch(() => {});
+      await logEvent(intent.itemId!, "snoozed");
+      await sendMessage(chatId, intent.reply);
+      return ok();
+    }
+
+    if (intent.action === "update") {
+      const data: Record<string, unknown> = {};
+      if (f.title !== undefined) data.title = f.title;
+      if (f.type !== undefined) data.type = f.type;
+      if (f.category !== undefined) data.category = f.category;
+      if (f.important !== undefined) data.important = f.important;
+      if (f.urgent !== undefined) data.urgent = f.urgent;
+      if ("deadline" in f) data.deadline = toDeadline(f.deadline);
+      if ("referee" in f) data.referee = f.referee;
+      if ("cadence" in f) data.cadence = f.cadence;
+      await prisma.item.update({ where: { id: intent.itemId! }, data }).catch(() => {});
+      await sendMessage(chatId, intent.reply);
+      return ok();
+    }
+
+    // Default: create it.
     const item = await prisma.item.create({
       data: {
-        title: c.title,
-        type: c.type,
-        category: c.category,
-        important: c.important,
-        urgent: c.urgent,
-        deadline: c.deadline ? new Date(c.deadline + "T09:00:00+08:00") : null,
-        referee: c.referee,
-        cadence: c.cadence,
-        snoozeUntil: c.snoozeDays ? new Date(Date.now() + c.snoozeDays * 86400000) : null,
+        title: f.title ?? text.slice(0, 80),
+        type: f.type ?? "task",
+        category: f.category ?? null,
+        important: f.important ?? true,
+        urgent: f.urgent ?? false,
+        deadline: toDeadline(f.deadline),
+        referee: f.referee ?? null,
+        cadence: f.cadence ?? null,
+        snoozeUntil: intent.snoozeDays
+          ? new Date(Date.now() + intent.snoozeDays * 86400000)
+          : null,
       },
     });
     await sendMessage(
       chatId,
-      `${c.reply}\n#${item.id} · ${item.type}` +
+      `${intent.reply}\n#${item.id} · ${item.type}` +
         (item.category ? ` · ${item.category}` : "") +
-        (c.deadline ? ` · by ${c.deadline}` : "") +
+        (f.deadline ? ` · by ${f.deadline}` : "") +
         (item.referee ? ` · ${item.referee}` : "")
     );
     return ok();
