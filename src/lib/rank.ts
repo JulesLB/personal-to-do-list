@@ -96,28 +96,33 @@ export function deriveType(
   return "parking";
 }
 
+// Urgency is the primary sort, importance the tiebreak. Each proximity tier is
+// spaced more than the importance swing (40 vs 15 = 25), so a nearer deadline
+// always outranks a further one regardless of importance, and importance only
+// reorders items that share a tier. Calendar-day math (HKT) matches heatOf /
+// dueTone, so the score can't disagree with the band an item shows in.
+function proximityScore(item: Item, now: Date): number {
+  if (item.type === "commitment") {
+    if (pastCommit(item, now, commitmentCriticalAt(item))) return 150; // missed a full extra cycle
+    const od = overdueDaysCommit(item, now);
+    if (od >= 0) return 120; // due or overdue
+    if (od >= -soonLead(item.cadence)) return 80; // heating up
+    return 20;
+  }
+  if (!item.deadline) return 0;
+  const cal = Math.round(
+    (startOfDayHKT(item.deadline).getTime() - startOfDayHKT(now).getTime()) / DAY
+  );
+  if (cal < 0) return 150; // overdue
+  if (cal <= 1) return 120; // due today / tomorrow (burning)
+  if (cal <= 3) return 80; // soon
+  if (cal <= 7) return 50; // this week
+  return 20; // later
+}
+
 export function rankScore(item: Item, now: Date): number {
   if (item.type === "parking") return -1;
-
-  // Urgency isn't a flag any more: deadline proximity below is the urgency.
-  let s = item.important ? 40 : 15;
-
-  if (item.type === "commitment") {
-    if (pastCommit(item, now, commitmentCriticalAt(item))) return s + 50;
-    return s + (overdueDaysCommit(item, now) >= 0 ? 40 : 5);
-  }
-
-  if (item.deadline) {
-    const days = (item.deadline.getTime() - now.getTime()) / DAY;
-    if (days < 0) s += 50;
-    else if (days < 1) s += 40;
-    else if (days <= 2) s += 30;
-    else if (days <= 7) s += 20;
-    else s += 10;
-  } else if (item.important) {
-    s += 5;
-  }
-  return s;
+  return (item.important ? 40 : 15) + proximityScore(item, now);
 }
 
 // Color tone for the due label specifically. Tighter than the band heat: today

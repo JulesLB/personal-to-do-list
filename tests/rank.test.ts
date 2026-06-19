@@ -40,14 +40,20 @@ describe("rankScore", () => {
     );
   });
 
+  it("urgency beats importance: a due-tomorrow task outscores an important week-out one", () => {
+    const imminent = make({ important: false, deadline: daysAhead(1) });
+    const importantFar = make({ important: true, deadline: daysAhead(7) });
+    expect(rankScore(imminent, NOW)).toBeGreaterThan(rankScore(importantFar, NOW));
+  });
+
   it("a commitment 2+ cycles overdue hits the top band", () => {
     const c = make({ type: "commitment", cadence: "monthly", lastDoneAt: daysAgo(70) });
-    expect(rankScore(c, NOW)).toBe(40 + 50);
+    expect(rankScore(c, NOW)).toBe(40 + 150);
   });
 
   it("a freshly honored commitment sits in the low band", () => {
     const c = make({ type: "commitment", cadence: "monthly", lastDoneAt: daysAgo(1) });
-    expect(rankScore(c, NOW)).toBe(40 + 5);
+    expect(rankScore(c, NOW)).toBe(40 + 20);
   });
 });
 
