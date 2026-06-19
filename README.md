@@ -47,9 +47,21 @@ The schema is versioned with Prisma Migrate (`prisma/migrations/`, committed to 
 `prisma/schema.prisma`, run `npm run db:migrate` to create and apply a migration locally, then commit
 the SQL. Deploys apply pending migrations automatically (see step 7).
 
-Want to develop fully offline? Set `provider = "sqlite"` in `prisma/schema.prisma` and
-`DATABASE_URL="file:./dev.db"`, then `npm run db:push` (the offline path uses push, not migrate).
-Switch both back before you commit.
+### Test changes before you push
+
+Production is the `main` branch. Work on a feature branch and nothing goes live until you merge to
+`main`, so the safe loop is **branch → test → merge**. Pushing a branch is not a deploy.
+
+- **Board, locally:** `npm run dev:local` runs the whole board against a throwaway SQLite DB
+  (`prisma/dev.db`) seeded with sample items. It never touches prod Supabase and never edits the
+  tracked Postgres schema — it uses a separate `prisma/schema.sqlite.prisma`. Open
+  http://localhost:3000 and log in with `APP_SECRET`. Each run reseeds, so local edits are
+  disposable. After local work, `npm run build` regenerates the prod Prisma client.
+- **Bot brain, locally:** `npm run try -- "push the dentist to friday"` runs the real intent router
+  against your local items and prints what it decided (action, target, reply), using
+  `ANTHROPIC_API_KEY` from `.env`. It only reads and calls Claude; it changes nothing. The full
+  Telegram round-trip still needs a public URL (a Vercel preview deploy of the branch, or an ngrok
+  tunnel).
 
 ## Telegram
 
@@ -78,6 +90,8 @@ Tap the buttons on the daily nudge, or type:
 
 ## Helper scripts
 
+- `npm run dev:local` — runs the board against an isolated, seeded SQLite DB for offline UI work (see "Test changes before you push").
+- `npm run try -- "<message>"` — dry-runs the Telegram intent router against your local items and prints the decision; sends nothing.
 - `npm run set-webhook` — points the bot at `APP_URL/api/telegram` (subscribes to messages and button taps).
 - `npx tsx scripts/preview-nudge.ts [evening]` — prints the morning (or evening) nudge text and buttons for the current DB, without sending anything.
 - `npx tsx scripts/preview-sweep.ts [evening]` — dry-runs the full sweep against the local DB (ranking, accountability-memory writes, Event log) and prints the message plus the top item's nudge/ignore counters, without hitting Telegram. Run it twice to watch `ignoreCount` climb.

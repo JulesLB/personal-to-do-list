@@ -1,0 +1,53 @@
+// Local-only mirror of schema.prisma for offline development. Same models, but
+// the datasource is a throwaway SQLite file so `npm run dev:local` and
+// `npm run try` never touch prod Supabase. The Postgres schema.prisma stays the
+// source of truth for prod and migrations; keep the models here in sync with it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id           Int       @id @default(autoincrement())
+  title        String
+  type         String    @default("task")
+  important    Boolean   @default(true)
+  urgent       Boolean   @default(false)
+  deadline     DateTime?
+  referee      String?
+  category     String?
+  cadence      String?
+  status       String    @default("open")
+  snoozeUntil  DateTime?
+  lastNudgedAt DateTime?
+  promisedAt   DateTime?
+  doneAt       DateTime?
+  lastDoneAt   DateTime?
+  cycleStreak  Int       @default(0)
+  nudgeCount   Int       @default(0)
+  ignoreCount  Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  events       Event[]
+}
+
+model Event {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  kind      String
+  slot      String?
+  createdAt DateTime @default(now())
+
+  @@index([itemId])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
