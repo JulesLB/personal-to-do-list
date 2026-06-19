@@ -1,4 +1,4 @@
-# Hermes — personal accountability engine
+# Ember — personal accountability engine
 
 A single-user system you run from Telegram. Text it what you commit to. It ranks everything
 by how much pressure it's under (deadline, importance, how overdue), nudges you each morning
@@ -13,14 +13,14 @@ into nagging and accountability, not storage.
 1. **Capture.** Text the Telegram bot in plain language.
 2. **Classify.** Claude turns it into a structured item: type, category, importance, deadline, referee. Later you can correct anything in plain language ("push the dentist to Friday", "that's weekly", "did the call") or from the board.
 3. **Rank.** Everything gets one pressure score (importance + deadline urgency + an overdue penalty). No quadrants to manage; the app decides the order.
-4. **See.** The web board opens with a row of category filter chips (open count per area), then the burning #1 as a hero, then everything else grouped into heat bands (on fire / heating up / back burner), with a quiet parking lot at the bottom. Tap a chip to filter the whole board to that area. Every row has inline controls: mark done, snooze (tonight / this weekend / next week), edit any field, and promote a parked idea into a task.
+4. **See.** The web board opens with the six categories as equal-width filter chips (open count per area), then the burning #1 as a hero, then everything else as separate heat-tinted band cards (on fire / heating up / back burner) with a quiet parking lot at the bottom. Tap a chip to filter the whole board to that area, tap it again to clear. Tap any row (or the hero) to edit any field or delete it; rows otherwise carry just a done tick, and the snooze menu (tonight / this weekend / next week) sits on the hero. A parked idea promotes itself to a task the moment you give it a date.
 5. **Nudge.** A morning cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short "what's next" list. An evening cron checks back, but only if something's still pressing.
 6. **Escalate.** The more overdue something gets, the louder it pushes. A task 3+ days late, or a commitment you've skipped two cycles running, leads with a pre-drafted, one-tap WhatsApp message to your referee. Tap "I'll do it today" and fail to, and the evening check calls out the broken promise.
 7. **Close.** Tap Done, or reply `done <id>`. A one-off task closes for good. A recurring commitment doesn't: marking it done honors the current cycle, resets its clock, and lets it resurface one cadence later. Its due date is computed from the cadence (weekly = same weekday, monthly = same day each month) and shown on the card, so an overdue commitment always tells you why it's on fire. Ending one for good is the explicit `retire <id>`.
 
 ## Categories
 
-Each item is auto-tagged into one of six areas: Life, Money, Body, Day Job, The Build, Brain (personal, finance, fitness, work, business, learning under the hood). Each has a color. The board shows them as filter chips at the top and tags each item with a small colored dot-pill, so urgency keeps the loud colors and category stays quiet. Tap a chip to filter the board to one area.
+Each item is auto-tagged into one of six areas: Life, Money, Body, Work, Build, Brain (personal, finance, fitness, work, business, learning under the hood). Each has a color. The board shows them as filter chips at the top and tags each item with a small colored dot-pill, so urgency keeps the loud colors and category stays quiet. Tap a chip to filter the board to one area.
 
 ## Stack
 

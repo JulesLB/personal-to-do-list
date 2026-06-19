@@ -1,9 +1,8 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { markDone, remove, retire, promote } from "./actions";
+import { markDone } from "./actions";
 import { rankActionable, dueInLabel, commitmentDueLabel, cadenceLabel, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
-import { waLink } from "@/lib/waLink";
-import { EditModal, type EditableItem } from "./EditModal";
+import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { SnoozeMenu } from "./SnoozeMenu";
 
 export const dynamic = "force-dynamic";
@@ -55,11 +54,13 @@ export default async function Board({
   const rest = ranked.slice(1);
   const inHeat = (h: Ranked["heat"]) => rest.filter((r) => r.heat === h);
 
+  // One ranked row: tap the body to edit; only the tick remains as a button.
+  // Snooze lives on the hero alone, everything else is one tap to validate.
   const Row = ({ r }: { r: Ranked }) => {
     const i = r.item;
     return (
       <div className={`row heat-${r.heat}`}>
-        <div className="row-main">
+        <EditTrigger item={toEditable(i)} className="row-main">
           <div className="row-title">{i.title}</div>
           <div className="row-meta">
             <Cat c={i.category} />
@@ -71,31 +72,68 @@ export default async function Board({
             {i.type === "commitment" && i.cadence ? <span className="ref">{cadenceLabel(i.cadence)}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
           </div>
-        </div>
+        </EditTrigger>
         <div className="row-actions">
           <form action={markDone.bind(null, i.id)}>
             <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
           </form>
-          <SnoozeMenu id={i.id} />
-          <EditModal item={toEditable(i)} />
-          {i.type === "commitment" ? (
-            <form action={retire.bind(null, i.id)}>
-              <button className="del" aria-label="retire commitment" title="Retire for good">×</button>
-            </form>
-          ) : null}
         </div>
       </div>
     );
   };
 
-  const heroTell =
-    hero && hero.heat === "burning"
-      ? waLink(hero.item.referee, `Accountability check: I still need to "${hero.item.title}". Hold me to it.`)
-      : null;
+  // A heat band inside the one queue card. Collapsible bands use <details>.
+  const Band = ({
+    rows,
+    ico,
+    name,
+    cls,
+    collapsible,
+    open,
+  }: {
+    rows: Ranked[];
+    ico: string;
+    name: string;
+    cls: string;
+    collapsible?: boolean;
+    open?: boolean;
+  }) => {
+    if (!rows.length) return null;
+    const head = (
+      <>
+        <span className="band-ico">{ico}</span> {name} <span className="band-count">{rows.length}</span>
+      </>
+    );
+    const list = (
+      <div className="feed">
+        {rows.map((r) => (
+          <Row key={r.item.id} r={r} />
+        ))}
+      </div>
+    );
+    if (collapsible) {
+      return (
+        <details className={`band band-${cls}`} open={open}>
+          <summary className="band-head">{head}</summary>
+          {list}
+        </details>
+      );
+    }
+    return (
+      <div className={`band band-${cls}`}>
+        <div className="band-head">{head}</div>
+        {list}
+      </div>
+    );
+  };
+
+  const burning = inHeat("burning");
+  const soon = inHeat("soon");
+  const later = inHeat("later");
 
   return (
     <main className="wrap">
-      <nav className="cat-grid">
+      <nav className="filters">
         {(Object.keys(CATEGORIES) as Category[]).map((c) => {
           const m = CATEGORIES[c];
           const on = active === c;
@@ -108,7 +146,7 @@ export default async function Board({
             >
               <span className="dot" />
               <span className="cat-chip-name">{m.label}</span>
-              <span className="cat-chip-count">({countFor(c)})</span>
+              <span className="cat-chip-count">{countFor(c)}</span>
             </a>
           );
         })}
@@ -116,38 +154,31 @@ export default async function Board({
 
       {hero ? (
         <section className={`hero hero-${hero.heat}`}>
-          <div className="hero-kicker">
-            {hero.heat === "burning" ? "🔥 Burning · do this first" : "Top priority"}
-          </div>
-          <div className="hero-title">{hero.item.title}</div>
-          <div className="hero-meta">
-            <Cat c={hero.item.category} />
-            {hero.item.type === "commitment" ? (
-              <span className="dl">{commitmentDueLabel(hero.item, now)}</span>
-            ) : hero.item.deadline ? (
-              <span className="dl">{dueInLabel(hero.item.deadline, now)}</span>
-            ) : null}
-            {hero.item.type === "commitment" && hero.item.cadence ? (
-              <span className="ref ref-hero">{cadenceLabel(hero.item.cadence)}</span>
-            ) : null}
-            {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
+          <div className="hero-left">
+            <div className="hero-kicker">
+              {hero.heat === "burning" ? "🔥 Burning · do this first" : "Top priority"}
+            </div>
+            <EditTrigger item={toEditable(hero.item)} className="hero-body">
+              <div className="hero-title">{hero.item.title}</div>
+              <div className="hero-meta">
+                <Cat c={hero.item.category} />
+                {hero.item.type === "commitment" ? (
+                  <span className="dl">{commitmentDueLabel(hero.item, now)}</span>
+                ) : hero.item.deadline ? (
+                  <span className="dl">{dueInLabel(hero.item.deadline, now)}</span>
+                ) : null}
+                {hero.item.type === "commitment" && hero.item.cadence ? (
+                  <span className="ref ref-hero">{cadenceLabel(hero.item.cadence)}</span>
+                ) : null}
+                {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
+              </div>
+            </EditTrigger>
           </div>
           <div className="hero-actions">
             <form action={markDone.bind(null, hero.item.id)}>
               <button className="done-lg">Done</button>
             </form>
-            {heroTell ? (
-              <a className="tell" href={heroTell}>
-                Tell {hero.item.referee}
-              </a>
-            ) : null}
             <SnoozeMenu id={hero.item.id} />
-            <EditModal item={toEditable(hero.item)} />
-            {hero.item.type === "commitment" ? (
-              <form action={retire.bind(null, hero.item.id)}>
-                <button className="retire-lg" title="Retire this commitment for good">Retire</button>
-              </form>
-            ) : null}
           </div>
         </section>
       ) : (
@@ -158,68 +189,23 @@ export default async function Board({
         </section>
       )}
 
-      {inHeat("burning").length ? (
-        <section className="sec sec-burning">
-          <h2 className="sec-head">
-            <span className="sec-ico">🔥</span> On fire <span className="sec-count">({inHeat("burning").length})</span>
-          </h2>
-          <div className="feed">
-            {inHeat("burning").map((r) => (
-              <Row key={r.item.id} r={r} />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {inHeat("soon").length ? (
-        <details className="sec sec-soon" open>
-          <summary className="sec-head">
-            <span className="sec-ico">⏳</span> Heating up <span className="sec-count">({inHeat("soon").length})</span>
-          </summary>
-          <div className="feed">
-            {inHeat("soon").map((r) => (
-              <Row key={r.item.id} r={r} />
-            ))}
-          </div>
-        </details>
-      ) : null}
-
-      {inHeat("later").length ? (
-        <details className="sec sec-later">
-          <summary className="sec-head">
-            <span className="sec-ico">🧊</span> Back burner <span className="sec-count">({inHeat("later").length})</span>
-          </summary>
-          <div className="feed">
-            {inHeat("later").map((r) => (
-              <Row key={r.item.id} r={r} />
-            ))}
-          </div>
-        </details>
-      ) : null}
-
+      <Band rows={burning} ico="🔥" name="On fire" cls="burning" />
+      <Band rows={soon} ico="⏳" name="Heating up" cls="soon" collapsible open />
+      <Band rows={later} ico="🧊" name="Back burner" cls="later" collapsible />
       {parking.length ? (
-        <details className="sec sec-parking">
-          <summary className="sec-head">
-            <span className="sec-ico">🅿️</span> Parking lot <span className="sec-count">({parking.length})</span>
+        <details className="band band-parking">
+          <summary className="band-head">
+            <span className="band-ico">🅿️</span> Parking lot <span className="band-count">{parking.length}</span>
           </summary>
           <div className="feed">
             {parking.map((i) => (
               <div className="row heat-later" key={i.id}>
-                <div className="row-main">
+                <EditTrigger item={toEditable(i)} className="row-main">
                   <div className="row-title">{i.title}</div>
                   <div className="row-meta">
                     <Cat c={i.category} />
                   </div>
-                </div>
-                <div className="row-actions">
-                  <form action={promote.bind(null, i.id)}>
-                    <button className="promote" title="Promote to a task">↑ Task</button>
-                  </form>
-                  <EditModal item={toEditable(i)} />
-                  <form action={remove.bind(null, i.id)}>
-                    <button className="del" aria-label="drop">×</button>
-                  </form>
-                </div>
+                </EditTrigger>
               </div>
             ))}
           </div>

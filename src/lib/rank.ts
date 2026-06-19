@@ -16,8 +16,8 @@ export const CATEGORIES: Record<Category, { label: string; dot: string }> = {
   personal: { label: "Life", dot: "#7f77dd" },
   finance: { label: "Money", dot: "#1d9e75" },
   fitness: { label: "Body", dot: "#d85a30" },
-  work: { label: "Day Job", dot: "#378add" },
-  business: { label: "The Build", dot: "#d4537e" },
+  work: { label: "Work", dot: "#378add" },
+  business: { label: "Build", dot: "#d4537e" },
   learning: { label: "Brain", dot: "#888780" },
 };
 

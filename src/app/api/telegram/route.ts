@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     if (lower === "/start") {
       await sendMessage(
         chatId,
-        'Hermes here. Text me anything and I log it. You can also edit in plain English: "push the dentist to Friday", "the gym thing is weekly", "drop the tax idea", "did the call". Commands still work: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
+        'Ember here. Text me anything and I log it. You can also edit in plain English: "push the dentist to Friday", "the gym thing is weekly", "drop the tax idea", "did the call". Commands still work: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
       );
       return ok();
     }

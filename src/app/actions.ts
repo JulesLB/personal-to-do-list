@@ -38,17 +38,22 @@ export async function updateItem(id: number, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return;
   const deadlineStr = String(formData.get("deadline") ?? "");
+  const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
+  // A parked idea with a real date isn't parked any more: giving it a deadline
+  // promotes it straight into the actionable list.
+  const wantedType = String(formData.get("type") || "task");
+  const type = wantedType === "parking" && deadline ? "task" : wantedType;
   await prisma.item.update({
     where: { id },
     data: {
       title,
-      type: String(formData.get("type") || "task"),
+      type,
       category: String(formData.get("category") || "") || null,
       referee: String(formData.get("referee") || "") || null,
       cadence: String(formData.get("cadence") || "") || null,
       important: formData.get("important") != null,
       urgent: formData.get("urgent") != null,
-      deadline: deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null,
+      deadline,
     },
   });
   revalidatePath("/");
@@ -71,12 +76,3 @@ export async function snoozeItem(id: number, preset: string) {
   revalidatePath("/");
 }
 
-// Promote a parked idea into an actionable task: important by default so it
-// lands in the ranked list with teeth. Add a deadline from the edit modal.
-export async function promote(id: number) {
-  await prisma.item.update({
-    where: { id },
-    data: { type: "task", important: true, snoozeUntil: null },
-  });
-  revalidatePath("/");
-}
