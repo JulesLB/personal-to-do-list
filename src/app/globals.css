@@ -51,6 +51,28 @@ body {
   align-items: center;
   gap: 8px;
 }
+.topbar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--burn-text);
+  background: var(--burn-soft);
+  border: 1px solid color-mix(in srgb, var(--burn) 35%, #fff);
+  border-radius: 999px;
+  padding: 5px 13px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.add-btn:hover {
+  background: color-mix(in srgb, var(--burn-soft) 80%, var(--burn));
+}
 .brand-logo {
   border-radius: 7px;
   display: block;
@@ -754,89 +776,104 @@ details.band[open] > summary.band-head::after {
   background: var(--panel-2);
 }
 
-/* Burn-to-ash: tapping Done lights the card at its bottom-left corner; a diagonal
-   flame front then sweeps across to the top-right, eating the card as it goes, and
-   the empty space collapses so the list closes the gap before the server drops the
-   row. One animated variable, --burn, drives everything: it's the position of the
-   flame front along the card's diagonal (0% = bottom-left corner, 100% = top-right).
-   A mask on the card makes everything behind the front disappear (the card burns
-   away, no dark veil), and two flame bands are pinned just ahead of the front via
-   gradient stops written relative to --burn, then distorted by the SVG turbulence
-   filter (#ember-fire) so the edges lick and flicker like real flame. Reduced-motion
-   users never get the .igniting class, so they just see it vanish. The brand is
-   Ember; finishing something should feel like it burns. */
-@property --flame {
-  syntax: "<percentage>";
-  inherits: true;
-  initial-value: 0%;
-}
+/* Burn-to-ash: tapping Done sets the card alight; a flame front sweeps left to
+   right, eating the card as it goes, then the empty space collapses so the list
+   closes the gap before the server drops the row.
+
+   Mobile-safe by construction: the card is erased by animating mask-position (a
+   fixed gradient that slides across), and the two flame bands by animating
+   transform: translateX. Both are properties mobile browsers (iOS Safari, Android
+   Chrome) repaint every frame. The earlier version interpolated a registered
+   @property inside the mask/gradient calc() — desktop Chrome repaints that per
+   frame, but mobile does not, so the flames never rendered and the row just blinked
+   out. Keep the motion on mask-position/transform; don't move it back into a
+   custom-property calc(). The SVG turbulence filter (#ember-fire) only adds flicker;
+   if a browser ignores it the bands still read as fire. Reduced-motion users never
+   get the .igniting class, so they just see it vanish. The brand is Ember; finishing
+   something should feel like it burns. */
 [data-burnable] {
   position: relative;
 }
 .igniting {
-  --flame: -28%;
   pointer-events: none;
   overflow: hidden;
   max-height: 260px;
-  /* The card itself: visible ahead (right) of the front, gone behind (left) it.
-     Trailing edge lags well behind the flame so a wide strip of card is still
-     there and on fire before it vanishes, instead of a thin line. */
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent calc(var(--flame) - 26%),
-    #000 calc(var(--flame) - 4%)
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent calc(var(--flame) - 26%),
-    #000 calc(var(--flame) - 4%)
-  );
+  /* The card itself: a transparent-to-black gradient, 3x the card wide, slid from
+     fully past the left (all black = visible) to past the right (all transparent =
+     gone). The soft ramp is the burn front; everything behind it (left, transparent)
+     is already ash. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0 12%, #000 24% 100%);
+  mask-image: linear-gradient(90deg, transparent 0 12%, #000 24% 100%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
   animation: ember-sweep 1.2s linear forwards,
     ember-fall 0.34s ease-in 0.96s forwards;
 }
 /* Back flame: a wide, soft orange-red glow trailing the front, full card height,
-   for a body of fire behind the bright edge. */
+   for a body of fire behind the bright edge. The band slides across via translateX. */
 .igniting::after {
   content: "";
   position: absolute;
-  inset: -34px -16px -10px;
+  top: -34px;
+  bottom: -10px;
+  left: 0;
+  width: 80%;
   background: linear-gradient(
     90deg,
-    rgba(180, 30, 10, 0) calc(var(--flame) - 56%),
-    rgba(214, 58, 18, 0.5) calc(var(--flame) - 34%),
-    rgba(255, 138, 38, 0.62) calc(var(--flame) - 12%),
-    rgba(255, 205, 90, 0.45) calc(var(--flame) + 8%),
-    rgba(255, 205, 90, 0) calc(var(--flame) + 26%)
+    rgba(180, 30, 10, 0) 0%,
+    rgba(214, 58, 18, 0.5) 42%,
+    rgba(255, 138, 38, 0.62) 74%,
+    rgba(255, 205, 90, 0.45) 92%,
+    rgba(255, 205, 90, 0) 100%
   );
   filter: url(#ember-fire);
   z-index: 3;
+  will-change: transform;
+  animation: ember-flames 1.2s linear forwards;
 }
-/* Front flame: a tall, hot wall pinned to the burn line so the white-yellow tip
-   always rides the front. The band is wide and runs the full card height, so it
-   reads as flames engulfing the card rather than a line crossing it. */
+/* Front flame: a hot wall riding the leading (right) edge of the band, so the
+   white-yellow tip stays at the burn line as it crosses the card. */
 .igniting::before {
   content: "";
   position: absolute;
-  inset: -26px -12px -8px;
+  top: -26px;
+  bottom: -8px;
+  left: 0;
+  width: 56%;
   background: linear-gradient(
     90deg,
-    rgba(120, 18, 8, 0) calc(var(--flame) - 42%),
-    #b81d0c calc(var(--flame) - 28%),
-    #ef5a18 calc(var(--flame) - 15%),
-    #ff9a2e calc(var(--flame) - 3%),
-    #ffe27a calc(var(--flame) + 8%),
-    #fff6cf calc(var(--flame) + 14%),
-    rgba(255, 246, 207, 0) calc(var(--flame) + 24%)
+    rgba(120, 18, 8, 0) 0%,
+    #b81d0c 46%,
+    #ef5a18 66%,
+    #ff9a2e 82%,
+    #ffe27a 93%,
+    #fff6cf 100%
   );
   filter: url(#ember-fire);
   z-index: 4;
+  will-change: transform;
+  animation: ember-flames 1.2s linear forwards;
 }
 @keyframes ember-sweep {
   from {
-    --flame: -28%;
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
   }
   to {
-    --flame: 140%;
+    -webkit-mask-position: -40% 0;
+    mask-position: -40% 0;
+  }
+}
+@keyframes ember-flames {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(285%);
   }
 }
 @keyframes ember-fall {
