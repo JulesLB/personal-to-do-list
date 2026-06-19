@@ -1,7 +1,7 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { markDone } from "./actions";
-import { rankActionable, dueInLabel, commitmentDueLabel, cadenceLabel, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { rankActionable, sortByDate, dueInLabel, dueTone, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { SnoozeMenu } from "./SnoozeMenu";
 
@@ -12,10 +12,7 @@ const meta = (c: string | null) => (c && c in CATEGORIES ? CATEGORIES[c as Categ
 const toEditable = (i: Item): EditableItem => ({
   id: i.id,
   title: i.title,
-  type: i.type,
   category: i.category,
-  important: i.important,
-  urgent: i.urgent,
   deadline: i.deadline ? isoHKT(i.deadline) : null,
   referee: i.referee,
   cadence: i.cadence,
@@ -54,23 +51,45 @@ export default async function Board({
   const rest = ranked.slice(1);
   const inHeat = (h: Ranked["heat"]) => rest.filter((r) => r.heat === h);
 
+  // A commitment's due date renders relative (in days), same as a task, so the
+  // whole list reads in one language instead of mixing absolute dates and counts.
+  const dueOf = (i: Item) =>
+    i.type === "commitment"
+      ? dueInLabel(commitmentDue(i), now)
+      : i.deadline
+        ? dueInLabel(i.deadline, now)
+        : null;
+
+  // The push tally as one escalating warning icon: orange at one push, red at two,
+  // red and pulsing at three or more. The count lives in the tooltip.
+  const Pushed = ({ i }: { i: Item }) => {
+    const d = deferState(i);
+    if (!d) return null;
+    return (
+      <span
+        className={`defer-warn ${d.tier}`}
+        title={`Pushed ${d.count} time${d.count > 1 ? "s" : ""}`}
+        aria-label={`Pushed ${d.count} times`}
+      >
+        ⚠
+      </span>
+    );
+  };
+
   // One ranked row: tap the body to edit; only the tick remains as a button.
   // Snooze lives on the hero alone, everything else is one tap to validate.
   const Row = ({ r }: { r: Ranked }) => {
     const i = r.item;
+    const due = dueOf(i);
     return (
-      <div className={`row heat-${r.heat}`}>
+      <div className={`row tone-${dueTone(i, now)}`}>
         <EditTrigger item={toEditable(i)} className="row-main">
           <div className="row-title">{i.title}</div>
           <div className="row-meta">
             <Cat c={i.category} />
-            {i.type === "commitment" ? (
-              <span className={`dl dl-${r.heat}`}>{commitmentDueLabel(i, now)}</span>
-            ) : i.deadline ? (
-              <span className={`dl dl-${r.heat}`}>{dueInLabel(i.deadline, now)}</span>
-            ) : null}
-            {i.type === "commitment" && i.cadence ? <span className="ref">{cadenceLabel(i.cadence)}</span> : null}
+            {due ? <span className={`dl dl-${dueTone(i, now)}`}>{due}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
+            <Pushed i={i} />
           </div>
         </EditTrigger>
         <div className="row-actions">
@@ -127,9 +146,11 @@ export default async function Board({
     );
   };
 
+  // On fire stays in score order (importance leads when something's burning); the
+  // calmer bands read in plain date order so they're not a jumble of mixed dates.
   const burning = inHeat("burning");
-  const soon = inHeat("soon");
-  const later = inHeat("later");
+  const soon = sortByDate(inHeat("soon"));
+  const later = sortByDate(inHeat("later"));
 
   return (
     <main className="wrap">
@@ -156,21 +177,15 @@ export default async function Board({
         <section className={`hero hero-${hero.heat}`}>
           <div className="hero-left">
             <div className="hero-kicker">
-              {hero.heat === "burning" ? "🔥 Burning · do this first" : "Top priority"}
+              {hero.heat === "burning" ? "🔥 Do this first" : "Top priority"}
             </div>
             <EditTrigger item={toEditable(hero.item)} className="hero-body">
               <div className="hero-title">{hero.item.title}</div>
               <div className="hero-meta">
                 <Cat c={hero.item.category} />
-                {hero.item.type === "commitment" ? (
-                  <span className="dl">{commitmentDueLabel(hero.item, now)}</span>
-                ) : hero.item.deadline ? (
-                  <span className="dl">{dueInLabel(hero.item.deadline, now)}</span>
-                ) : null}
-                {hero.item.type === "commitment" && hero.item.cadence ? (
-                  <span className="ref ref-hero">{cadenceLabel(hero.item.cadence)}</span>
-                ) : null}
+                {dueOf(hero.item) ? <span className={`dl dl-${dueTone(hero.item, now)}`}>{dueOf(hero.item)}</span> : null}
                 {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
+                <Pushed i={hero.item} />
               </div>
             </EditTrigger>
           </div>
@@ -198,16 +213,21 @@ export default async function Board({
             <span className="band-ico">🅿️</span> Parking lot <span className="band-count">{parking.length}</span>
           </summary>
           <div className="feed">
-            {parking.map((i) => (
-              <div className="row heat-later" key={i.id}>
-                <EditTrigger item={toEditable(i)} className="row-main">
-                  <div className="row-title">{i.title}</div>
-                  <div className="row-meta">
-                    <Cat c={i.category} />
-                  </div>
-                </EditTrigger>
-              </div>
-            ))}
+            {parking.map((i) => {
+              const stale = isStaleParking(i, now);
+              return (
+                <div className={`row${stale ? " stale" : ""}`} key={i.id}>
+                  <EditTrigger item={toEditable(i)} className="row-main">
+                    <div className="row-title">{i.title}</div>
+                    <div className="row-meta">
+                      <Cat c={i.category} />
+                      <span className="age">{parkingAgeLabel(i.createdAt, now)}</span>
+                      {stale ? <span className="pushed">Decide: date it or drop it</span> : null}
+                    </div>
+                  </EditTrigger>
+                </div>
+              );
+            })}
           </div>
         </details>
       ) : null}

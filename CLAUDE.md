@@ -55,14 +55,17 @@ Postgres schema or prod. Orchestrated by [scripts/dev-local.mjs](scripts/dev-loc
 The data model is deliberately one flat table. Everything else is functions over it.
 
 **`Item`** ([prisma/schema.prisma](prisma/schema.prisma)) — the main entity. Key fields:
-`type` (`task` | `commitment` | `parking`), `important`/`urgent` booleans, `deadline`, `referee`,
-`category` (six fixed values), `cadence` (commitments only), `status` (`open` | `done` | `retired`),
-`snoozeUntil`, `lastNudgedAt`, `promisedAt` (set when you tap "I'll do it today"; the evening check
-reads it to call out broken promises). Commitments also use `lastDoneAt` (when the current cycle was
+`type` (`task` | `commitment` | `parking`, **derived, never set by hand** — see `deriveType`),
+`important` (a single brain-owned judgment; there is no `urgent` flag, urgency comes from the
+deadline alone), `deadline`, `referee`, `category` (six fixed values), `cadence` (commitments only),
+`status` (`open` | `done` | `retired`), `snoozeUntil`, `lastNudgedAt`, `promisedAt` (set when you tap
+"I'll do it today"; the evening check reads it to call out broken promises). Commitments also use `lastDoneAt` (when the current cycle was
 last honored — this, not `lastNudgedAt`, drives cadence-overdue math so nudging never resets the
 clock) and `cycleStreak`. Accountability memory lives in `nudgeCount` / `ignoreCount` (bumped in the
-sweep) plus an append-only **`Event`** table (`itemId`, `kind` = `nudged|snoozed|promised|done|...`,
-`slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table whose
+sweep), a **`deferCount`** (bumped every time you actively push an item away — any snooze, or moving
+its deadline to a later date; `deferWarning` shows "Pushed N times" on the board and nudge once it
+hits 2, and a completed cycle resets it), plus an append-only **`Event`** table (`itemId`, `kind` =
+`nudged|snoozed|promised|done|...`, `slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table whose
 only live key is `ownerChatId` — the single user's Telegram chat, auto-learned from their first
 message so the cron knows where to nudge.
 
@@ -70,8 +73,16 @@ Completing a **commitment** does not close it: it sets `lastDoneAt = now`, clear
 `promisedAt`, bumps `cycleStreak`, and leaves `status = open` so it resurfaces one cadence later.
 `retire` is the explicit "end it for good" path (`status = retired`). Tasks still close on done.
 
+**Type is derived, not chosen** ([src/lib/rank.ts](src/lib/rank.ts)). `deriveType(deadline, cadence)`
+is the single rule: a cadence makes it a `commitment`, a one-off deadline a `task`, neither a
+`parking` item. The date is the only lever — every create/update path (classifier, board, Telegram
+commands) recomputes type from the resulting deadline+cadence rather than trusting any typed value,
+so an undated, non-recurring item falls to parking by definition. The classifier sets a deadline or a
+cadence to shape an item; it never decides the type directly.
+
 **Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). `rankScore` collapses
-importance + urgency + deadline proximity + (for commitments) how far past due into one number. A
+importance + deadline proximity + (for commitments) how far past due into one number (urgency is the
+deadline proximity, not a separate flag). A
 commitment's due date is **computed, not stored**: `commitmentDue` adds one cadence period to
 `lastDoneAt` (or `createdAt`) calendar-accurately — weekly = same weekday, monthly = same
 day-of-month clamped to the month's length (31 Jan → 28 Feb). `heatOf` buckets an item into
@@ -87,8 +98,8 @@ Claude call with a forced `route` tool that turns a messy sentence into an `Inte
 (`create | update | complete | snooze | retire | query | clarify`), an optional target `itemId`
 resolved against the open list by fuzzy title match, and (for updates) the masked fields to change.
 Ambiguous edits return `clarify` with a single question instead of guessing. The system prompt
-encodes Jules-specific rules (which referee for what, the six categories, the important-but-not-urgent
-"death zone"). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the only
+encodes Jules-specific rules (which referee for what, the six categories, and the "death zone": an
+important item with no date falls to parking and rots, so anything important should get a deadline). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the only
 model called anywhere in the app.
 
 **Telegram webhook** ([src/app/api/telegram/route.ts](src/app/api/telegram/route.ts)) — the main
@@ -129,20 +140,34 @@ Two once-daily jobs fit the Vercel Hobby limit.
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
 `remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **sticky** filter bar of the six
 categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
-**hero** (`#1`) on its own card, then the rest as **separate, heat-tinted band cards** — "On fire"
-(always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking lot"
-(collapsed), the collapsible ones a `<details>` with its count. Clicking a chip sets `?cat=<key>` and
+**hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
+(always shown, score order) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
+lot" (collapsed), the collapsible ones a `<details>` with its count. The visual system is **one
+color, one job**: category is a quiet colored dot, the single loud color is urgency via `dueTone`
+(red = due today/tomorrow/overdue, amber = 2–3 days, neutral beyond) shown on the due text and a red
+left-bar on `tone-burning` rows, green means Done only, and bands are plain white (only the header
+label carries the urgency tint). The hero is the exception: it fills red when burning and takes an
+amber/faint left edge by `heatOf` otherwise. The calm bands ("Heating up",
+"Back burner") are re-sorted by date via `sortByDate` (soonest first; importance steps back there
+since heat already captured urgency); only the hero + "On fire" use full `rankScore` order. Parking
+rows show their age via `parkingAgeLabel` ("added 12d ago") and, once `isStaleParking` trips at 14
+days, a blunt "Decide: date it or drop it" flag. Clicking a chip sets `?cat=<key>` and
 filters the hero + bands; the chip counts stay global; clicking the active chip clears the filter
 (there is no logo/reset control). The page reads the filter from the awaited `searchParams` (Next 15
-async). Category renders as a colored dot-pill; task deadlines render via `dueInLabel` ("due in 10
-days", in days even past a week) and commitments show their computed due date + cadence via
-`commitmentDueLabel`. **Tap a row or the hero body to edit** — the edit panel
+async). Category renders as a colored dot + grey label; task deadlines render via `dueInLabel` ("due
+in 10 days", in days even past a week) and commitments show their computed due date the same way
+(`dueInLabel(commitmentDue(...))`). Repeated dodges surface as one escalating ⚠ via `deferState`
+(orange at 1 push, red at 2, red + pulse at 3+). **Tap a row or the hero body to edit** — the edit panel
 ([src/app/EditTrigger.tsx](src/app/EditTrigger.tsx), a client component) opens on the body click, so
-there is no edit button; it changes any classified field and holds the destructive action behind a
-tap-to-confirm (delete for tasks/parking, retire for commitments). Rows otherwise show only the done
-tick; the **snooze-preset menu** ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)) lives on the hero
-alone. Parking has no promote button: giving a parked item a **deadline** in the edit panel
-auto-promotes it to a task (in `updateItem`). Branded **Ember** — favicon at
+there is no edit button. The panel exposes only the levers you actually control — title, category,
+referee, deadline, and a **"Repeats"** select (none / daily / weekly / monthly = the cadence). Type
+and `important` are deliberately absent: type is derived from deadline+repeats and `important` is
+brain-owned, so neither is clickable. The destructive action sits behind a tap-to-confirm (delete
+when there's no cadence, retire for a commitment). Rows otherwise show only the done tick; the
+**snooze-preset menu** ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)) lives on the hero alone.
+There is no promote button and no parking type option: giving an item a **deadline** in the panel
+derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
+it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
 [src/middleware.ts](src/middleware.ts), which checks an `app_auth` cookie against `APP_SECRET`;
 `/login`, `/api`, and assets are left open. `/api/login` sets the cookie. Styling is a light,
@@ -152,7 +177,7 @@ card-based theme in [src/app/globals.css](src/app/globals.css).
 
 - The six categories are defined once in `CATEGORIES` in [src/lib/rank.ts](src/lib/rank.ts), each
   with a single-word display `label` (e.g. business → "Build") and a `dot` color (the board renders category
-  as a colored dot-pill). The underlying category keys (`personal`, `finance`, …) are what `classify`
+  as a colored dot + grey label). The underlying category keys (`personal`, `finance`, …) are what `classify`
   emits; the labels are display-only. The `Category` union is duplicated in `rank.ts` and
   `classify.ts` — keep them in sync if you add one.
 - `.env` is loaded via `node --env-file` in the npm scripts, which does **not** strip inline

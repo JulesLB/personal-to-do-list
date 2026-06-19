@@ -6,13 +6,12 @@ import { updateItem, remove, retire } from "./actions";
 
 // Narrowed, fully-serializable view of an item for the client. deadline is the
 // HKT YYYY-MM-DD the date input expects, computed on the server with isoHKT.
+// What you can edit. Type and importance aren't here on purpose: type is derived
+// from deadline+repeats, and importance is judged by the classifier, not clicked.
 export type EditableItem = {
   id: number;
   title: string;
-  type: string;
   category: string | null;
-  important: boolean;
-  urgent: boolean;
   deadline: string | null;
   referee: string | null;
   cadence: string | null;
@@ -66,14 +65,6 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
 
           <div className="ef-grid">
             <label className="ef-field">
-              <span>Type</span>
-              <select name="type" defaultValue={item.type}>
-                <option value="task">task</option>
-                <option value="commitment">commitment</option>
-                <option value="parking">parking</option>
-              </select>
-            </label>
-            <label className="ef-field">
               <span>Category</span>
               <select name="category" defaultValue={item.category ?? ""}>
                 <option value="">—</option>
@@ -85,10 +76,6 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
               </select>
             </label>
             <label className="ef-field">
-              <span>Deadline</span>
-              <input type="date" name="deadline" defaultValue={item.deadline ?? ""} />
-            </label>
-            <label className="ef-field">
               <span>Referee</span>
               <select name="referee" defaultValue={item.referee ?? ""}>
                 <option value="">none</option>
@@ -98,9 +85,13 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
               </select>
             </label>
             <label className="ef-field">
-              <span>Cadence</span>
+              <span>Deadline</span>
+              <input type="date" name="deadline" defaultValue={item.deadline ?? ""} />
+            </label>
+            <label className="ef-field">
+              <span>Repeats</span>
               <select name="cadence" defaultValue={item.cadence ?? ""}>
-                <option value="">none</option>
+                <option value="">no (one-off)</option>
                 <option value="daily">daily</option>
                 <option value="weekly">weekly</option>
                 <option value="monthly">monthly</option>
@@ -108,14 +99,9 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
             </label>
           </div>
 
-          <div className="ef-flags">
-            <label className="ef-check">
-              <input type="checkbox" name="important" defaultChecked={item.important} /> important
-            </label>
-            <label className="ef-check">
-              <input type="checkbox" name="urgent" defaultChecked={item.urgent} /> urgent
-            </label>
-          </div>
+          <p className="ef-hint">
+            A date makes it a task. Set it to repeat and it becomes a commitment. Neither and it parks.
+          </p>
 
           <div className="ef-actions">
             <DangerAction item={item} />
@@ -141,7 +127,8 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
 // block the delete.
 function DangerAction({ item }: { item: EditableItem }) {
   const [armed, setArmed] = useState(false);
-  const isCommitment = item.type === "commitment";
+  // A repeating item is a commitment, so end it with "retire"; the rest delete.
+  const isCommitment = !!item.cadence;
   const action = isCommitment ? retire : remove;
   const label = isCommitment ? "Retire" : "Delete";
   return armed ? (

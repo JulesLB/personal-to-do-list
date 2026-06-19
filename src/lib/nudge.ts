@@ -9,6 +9,7 @@ import {
   daysOverdue,
   isCritical,
   promisedToday,
+  deferState,
   CATEGORIES,
   type Category,
 } from "./rank";
@@ -136,6 +137,10 @@ export function buildDailyNudge(
   const meta = metaLine(it, now, true);
   let text = `${header(it, tier, slot, now, broken)}\n\n${label} ${DOT} ${it.title}`;
   if (meta) text += `\n${meta}`;
+  // Hold up a mirror once you've shoved this away more than once. A single
+  // postpone shows on the board but stays out of the nudge.
+  const pushed = deferState(it);
+  if (pushed && pushed.count >= 2) text += `\nYou've pushed this ${pushed.count} times. Careful.`;
 
   const next = ranked.filter((r) => r.item.id !== it.id).slice(0, 2);
   if (next.length) text += `\n\nWhat's next\n${next.map((r) => onDeck(r.item, now)).join("\n")}`;
