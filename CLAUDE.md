@@ -80,18 +80,21 @@ commands) recomputes type from the resulting deadline+cadence rather than trusti
 so an undated, non-recurring item falls to parking by definition. The classifier sets a deadline or a
 cadence to shape an item; it never decides the type directly.
 
-**Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). `rankScore` collapses
-importance + deadline proximity + (for commitments) how far past due into one number (urgency is the
-deadline proximity, not a separate flag). A
+**Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). Order is strictly
+**date first, importance second**: `compareActionable` sorts by the item's effective due date
+(soonest, or most overdue, first) and only uses `important` to break a tie between items due the
+**same calendar day** (HKT). There is no blended score — a nearer deadline always wins outright, so
+"due tomorrow" beats an important "due next week". A
 commitment's due date is **computed, not stored**: `commitmentDue` adds one cadence period to
 `lastDoneAt` (or `createdAt`) calendar-accurately — weekly = same weekday, monthly = same
-day-of-month clamped to the month's length (31 Jan → 28 Feb). `heatOf` buckets an item into
+day-of-month clamped to the month's length (31 Jan → 28 Feb), and that computed date is what the
+sort uses for commitments. `heatOf` buckets an item into
 `burning` / `soon` / `later` (a commitment is `burning` once now ≥ its due date, `soon` within a
 cadence-sized lead); `daysOverdue` and `isCritical` (a commitment a full extra period past due) drive
 escalation; `promisedToday` flags a broken same-day promise. `commitmentDueLabel` renders the
 computed date ("due 19 Jul · 3d overdue") for the board and nudge, so "on fire" always shows a reason.
-All day boundaries use `startOfDayHKT`. Parking items score `-1` and are excluded. No quadrants — the
-score decides order. The board and both nudge slots consume `rankActionable`.
+All day boundaries use `startOfDayHKT`. Parking items are excluded. No quadrants, no score — the
+date decides order. The board and both nudge slots consume `rankActionable`.
 
 **Classification / intent routing** ([src/lib/classify.ts](src/lib/classify.ts)) — `interpret` is one
 Claude call with a forced `route` tool that turns a messy sentence into an `Intent`: an `action`
@@ -141,15 +144,15 @@ mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) 
 `remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **sticky** filter bar of the six
 categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
 **hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
-(always shown, score order) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
+(always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
 lot" (collapsed), the collapsible ones a `<details>` with its count. The visual system is **one
 color, one job**: category is a quiet colored dot, the single loud color is urgency via `dueTone`
 (red = due today/tomorrow/overdue, amber = 2–3 days, neutral beyond) shown on the due text and a red
 left-bar on `tone-burning` rows, green means Done only, and bands are plain white (only the header
 label carries the urgency tint). The hero is the exception: it fills red when burning and takes an
-amber/faint left edge by `heatOf` otherwise. The calm bands ("Heating up",
-"Back burner") are re-sorted by date via `sortByDate` (soonest first; importance steps back there
-since heat already captured urgency); only the hero + "On fire" use full `rankScore` order. Parking
+amber/faint left edge by `heatOf` otherwise. Every band (hero, "On fire", and the calm
+"Heating up" / "Back burner") uses the one `compareActionable` order — soonest due date first,
+importance breaking ties on the same day; `sortByDate` is just that comparator applied to a band. Parking
 rows show their age via `parkingAgeLabel` ("added 12d ago") and, once `isStaleParking` trips at 14
 days, a blunt "Decide: date it or drop it" flag. Clicking a chip sets `?cat=<key>` and
 filters the hero + bands; the chip counts stay global; clicking the active chip clears the filter

@@ -96,33 +96,17 @@ export function deriveType(
   return "parking";
 }
 
-// Urgency is the primary sort, importance the tiebreak. Each proximity tier is
-// spaced more than the importance swing (40 vs 15 = 25), so a nearer deadline
-// always outranks a further one regardless of importance, and importance only
-// reorders items that share a tier. Calendar-day math (HKT) matches heatOf /
-// dueTone, so the score can't disagree with the band an item shows in.
-function proximityScore(item: Item, now: Date): number {
-  if (item.type === "commitment") {
-    if (pastCommit(item, now, commitmentCriticalAt(item))) return 150; // missed a full extra cycle
-    const od = overdueDaysCommit(item, now);
-    if (od >= 0) return 120; // due or overdue
-    if (od >= -soonLead(item.cadence)) return 80; // heating up
-    return 20;
-  }
-  if (!item.deadline) return 0;
-  const cal = Math.round(
-    (startOfDayHKT(item.deadline).getTime() - startOfDayHKT(now).getTime()) / DAY
-  );
-  if (cal < 0) return 150; // overdue
-  if (cal <= 1) return 120; // due today / tomorrow (burning)
-  if (cal <= 3) return 80; // soon
-  if (cal <= 7) return 50; // this week
-  return 20; // later
-}
-
-export function rankScore(item: Item, now: Date): number {
-  if (item.type === "parking") return -1;
-  return (item.important ? 40 : 15) + proximityScore(item, now);
+// Ordering is strictly lexicographic: date first, importance second. The
+// soonest (or most overdue) due date always wins outright; importance only
+// decides between two items that fall on the SAME calendar day (HKT). Nothing
+// else enters the sort. A task's date is its deadline, a commitment's is its
+// computed due date (see effectiveDate); parking is excluded upstream.
+export function compareActionable(a: Item, b: Item): number {
+  const da = effectiveDayHKT(a);
+  const db = effectiveDayHKT(b);
+  if (da !== db) return da - db; // earlier date is more urgent
+  if (a.important !== b.important) return a.important ? -1 : 1; // important breaks the tie
+  return a.id - b.id; // stable
 }
 
 // Color tone for the due label specifically. Tighter than the band heat: today
@@ -250,22 +234,25 @@ const effectiveDate = (item: Item): number =>
     ? commitmentDue(item).getTime()
     : item.deadline?.getTime() ?? Infinity;
 
-// Calmer bands (heating up, back burner) read better in plain chronological
-// order: heat already captured the urgency, so importance steps back here and
-// the soonest date comes first.
+// That date floored to its HKT calendar day, so "due on the same day" compares
+// equal regardless of the stored time-of-day. Infinity (undated) stays last.
+const effectiveDayHKT = (item: Item): number => {
+  const t = effectiveDate(item);
+  return Number.isFinite(t) ? startOfDayHKT(new Date(t)).getTime() : Infinity;
+};
+
+// Every list uses the same order: date first, importance second. (Was a
+// separate date-only sort; folded into the one comparator so the calm bands
+// can't disagree with the hero / On-fire order.)
 export function sortByDate(rows: Ranked[]): Ranked[] {
-  return [...rows].sort((a, b) => effectiveDate(a.item) - effectiveDate(b.item));
+  return [...rows].sort((a, b) => compareActionable(a.item, b.item));
 }
 
-export type Ranked = { item: Item; score: number; heat: Heat };
+export type Ranked = { item: Item; heat: Heat };
 
 export function rankActionable(items: Item[], now: Date): Ranked[] {
   return items
     .filter((i) => i.type !== "parking")
-    .map((item) => ({ item, score: rankScore(item, now), heat: heatOf(item, now) }))
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        (a.item.deadline?.getTime() ?? Infinity) - (b.item.deadline?.getTime() ?? Infinity)
-    );
+    .map((item) => ({ item, heat: heatOf(item, now) }))
+    .sort((a, b) => compareActionable(a.item, b.item));
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  rankScore,
+  compareActionable,
   heatOf,
   daysOverdue,
   isCritical,
@@ -17,43 +17,57 @@ import {
 } from "../src/lib/rank";
 import { make, NOW, daysAgo, daysAhead } from "./factory";
 
-describe("rankScore", () => {
-  it("parking is always -1", () => {
-    expect(rankScore(make({ type: "parking" }), NOW)).toBe(-1);
+const order = (items: ReturnType<typeof make>[]) =>
+  rankActionable(items, NOW).map((r) => r.item.id);
+
+describe("ranking order (date first, importance second)", () => {
+  it("a nearer deadline always wins, even over an important far-future one", () => {
+    const items = [
+      make({ id: 1, important: true, deadline: daysAhead(7) }),
+      make({ id: 2, important: false, deadline: daysAhead(1) }),
+    ];
+    expect(order(items)).toEqual([2, 1]);
   });
 
-  it("important outranks unimportant", () => {
-    expect(rankScore(make({ important: true }), NOW)).toBeGreaterThan(
-      rankScore(make({ important: false }), NOW)
-    );
+  it("the most overdue comes first", () => {
+    const items = [
+      make({ id: 1, deadline: daysAhead(0) }),
+      make({ id: 2, deadline: daysAhead(-3) }),
+      make({ id: 3, deadline: daysAhead(-1) }),
+    ];
+    expect(order(items)).toEqual([2, 3, 1]);
   });
 
-  it("a nearer deadline outscores a far-future one (urgency comes from the date)", () => {
-    expect(rankScore(make({ deadline: daysAhead(0) }), NOW)).toBeGreaterThan(
-      rankScore(make({ deadline: daysAhead(30) }), NOW)
-    );
+  it("importance only breaks a tie between items due the same day", () => {
+    const items = [
+      make({ id: 1, important: false, deadline: daysAhead(2) }),
+      make({ id: 2, important: true, deadline: daysAhead(2) }),
+    ];
+    expect(order(items)).toEqual([2, 1]);
   });
 
-  it("an overdue deadline outscores a far-future one", () => {
-    expect(rankScore(make({ deadline: daysAhead(-2) }), NOW)).toBeGreaterThan(
-      rankScore(make({ deadline: daysAhead(30) }), NOW)
-    );
+  it("a commitment ranks by its computed due date alongside tasks", () => {
+    const items = [
+      make({ id: 1, deadline: daysAhead(10) }),
+      // weekly honored 9d ago -> due 2d ago (overdue), so it leads the 10-day task
+      make({ id: 2, type: "commitment", cadence: "weekly", lastDoneAt: daysAgo(9) }),
+    ];
+    expect(order(items)).toEqual([2, 1]);
+  });
+});
+
+describe("compareActionable", () => {
+  it("orders the earlier date first regardless of importance", () => {
+    const near = make({ id: 1, important: false, deadline: daysAhead(1) });
+    const far = make({ id: 2, important: true, deadline: daysAhead(5) });
+    expect(compareActionable(near, far)).toBeLessThan(0);
   });
 
-  it("urgency beats importance: a due-tomorrow task outscores an important week-out one", () => {
-    const imminent = make({ important: false, deadline: daysAhead(1) });
-    const importantFar = make({ important: true, deadline: daysAhead(7) });
-    expect(rankScore(imminent, NOW)).toBeGreaterThan(rankScore(importantFar, NOW));
-  });
-
-  it("a commitment 2+ cycles overdue hits the top band", () => {
-    const c = make({ type: "commitment", cadence: "monthly", lastDoneAt: daysAgo(70) });
-    expect(rankScore(c, NOW)).toBe(40 + 150);
-  });
-
-  it("a freshly honored commitment sits in the low band", () => {
-    const c = make({ type: "commitment", cadence: "monthly", lastDoneAt: daysAgo(1) });
-    expect(rankScore(c, NOW)).toBe(40 + 20);
+  it("falls back to importance only on the same day", () => {
+    const plain = make({ id: 1, important: false, deadline: daysAhead(3) });
+    const important = make({ id: 2, important: true, deadline: daysAhead(3) });
+    expect(compareActionable(important, plain)).toBeLessThan(0);
+    expect(compareActionable(plain, important)).toBeGreaterThan(0);
   });
 });
 
@@ -111,13 +125,13 @@ describe("promisedToday", () => {
 });
 
 describe("rankActionable", () => {
-  it("drops parking and sorts by score descending", () => {
+  it("drops parking from the actionable list", () => {
     const items = [
       make({ id: 1, important: false, deadline: daysAhead(20) }),
       make({ id: 2, type: "parking" }),
       make({ id: 3, important: true, deadline: daysAhead(-1) }),
     ];
-    expect(rankActionable(items, NOW).map((r) => r.item.id)).toEqual([3, 1]);
+    expect(order(items)).toEqual([3, 1]);
   });
 });
 
