@@ -36,6 +36,79 @@ body {
   padding: 8px 18px 64px;
 }
 
+/* Top bar: the wordmark and the streak. The streak is the retention hook made
+   visible — a flame and a day count you don't want to break. It carries the one
+   loud color (burn) when lit so it pulls the eye the moment the board opens. */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 2px 10px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand-logo {
+  border-radius: 7px;
+  display: block;
+}
+.wordmark {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px 5px 9px;
+  cursor: default;
+  box-shadow: var(--shadow);
+}
+.streak.lit {
+  color: var(--burn-text);
+  border-color: color-mix(in srgb, var(--burn) 35%, #fff);
+  background: var(--burn-soft);
+}
+.streak strong {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.streak-flame {
+  font-size: 14px;
+  line-height: 1;
+}
+.streak.lit .streak-flame {
+  animation: streak-flicker 1.6s ease-in-out infinite;
+  transform-origin: 50% 80%;
+}
+@keyframes streak-flicker {
+  0%,
+  100% {
+    transform: scale(1) rotate(-2deg);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.12) rotate(2deg);
+    filter: brightness(1.15);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streak.lit .streak-flame {
+    animation: none;
+  }
+}
+
 /* Sticky filter bar: the six categories as equal-width chips. Three per row on
    mobile (two rows), six across on wider screens. Sticks to the top on scroll and
    breaks out of the wrap gutters so the blurred bar spans full width. */
@@ -679,4 +752,112 @@ details.band[open] > summary.band-head::after {
 }
 .snz-opt:hover {
   background: var(--panel-2);
+}
+
+/* Burn-to-ash: tapping Done lights the card at its bottom-left corner; a diagonal
+   flame front then sweeps across to the top-right, eating the card as it goes, and
+   the empty space collapses so the list closes the gap before the server drops the
+   row. One animated variable, --burn, drives everything: it's the position of the
+   flame front along the card's diagonal (0% = bottom-left corner, 100% = top-right).
+   A mask on the card makes everything behind the front disappear (the card burns
+   away, no dark veil), and two flame bands are pinned just ahead of the front via
+   gradient stops written relative to --burn, then distorted by the SVG turbulence
+   filter (#ember-fire) so the edges lick and flicker like real flame. Reduced-motion
+   users never get the .igniting class, so they just see it vanish. The brand is
+   Ember; finishing something should feel like it burns. */
+@property --flame {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+[data-burnable] {
+  position: relative;
+}
+.igniting {
+  --flame: -28%;
+  pointer-events: none;
+  overflow: hidden;
+  max-height: 260px;
+  /* The card itself: visible ahead (right) of the front, gone behind (left) it.
+     Trailing edge lags well behind the flame so a wide strip of card is still
+     there and on fire before it vanishes, instead of a thin line. */
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--flame) - 26%),
+    #000 calc(var(--flame) - 4%)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--flame) - 26%),
+    #000 calc(var(--flame) - 4%)
+  );
+  animation: ember-sweep 1.2s linear forwards,
+    ember-fall 0.34s ease-in 0.96s forwards;
+}
+/* Back flame: a wide, soft orange-red glow trailing the front, full card height,
+   for a body of fire behind the bright edge. */
+.igniting::after {
+  content: "";
+  position: absolute;
+  inset: -34px -16px -10px;
+  background: linear-gradient(
+    90deg,
+    rgba(180, 30, 10, 0) calc(var(--flame) - 56%),
+    rgba(214, 58, 18, 0.5) calc(var(--flame) - 34%),
+    rgba(255, 138, 38, 0.62) calc(var(--flame) - 12%),
+    rgba(255, 205, 90, 0.45) calc(var(--flame) + 8%),
+    rgba(255, 205, 90, 0) calc(var(--flame) + 26%)
+  );
+  filter: url(#ember-fire);
+  z-index: 3;
+}
+/* Front flame: a tall, hot wall pinned to the burn line so the white-yellow tip
+   always rides the front. The band is wide and runs the full card height, so it
+   reads as flames engulfing the card rather than a line crossing it. */
+.igniting::before {
+  content: "";
+  position: absolute;
+  inset: -26px -12px -8px;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 18, 8, 0) calc(var(--flame) - 42%),
+    #b81d0c calc(var(--flame) - 28%),
+    #ef5a18 calc(var(--flame) - 15%),
+    #ff9a2e calc(var(--flame) - 3%),
+    #ffe27a calc(var(--flame) + 8%),
+    #fff6cf calc(var(--flame) + 14%),
+    rgba(255, 246, 207, 0) calc(var(--flame) + 24%)
+  );
+  filter: url(#ember-fire);
+  z-index: 4;
+}
+@keyframes ember-sweep {
+  from {
+    --flame: -28%;
+  }
+  to {
+    --flame: 140%;
+  }
+}
+@keyframes ember-fall {
+  to {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .igniting {
+    animation: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .igniting::before,
+  .igniting::after {
+    display: none;
+  }
 }
