@@ -146,7 +146,8 @@ Two once-daily jobs fit the Vercel Hobby limit.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
-`remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **sticky** filter bar of the six
+`remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **top bar** (the Ember logo + the
+**streak chip**), then a **sticky** filter bar of the six
 categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
 **hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
 (always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
@@ -180,6 +181,26 @@ it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — 
 [src/middleware.ts](src/middleware.ts), which checks an `app_auth` cookie against `APP_SECRET`;
 `/login`, `/api`, and assets are left open. `/api/login` sets the cookie. Styling is a light,
 card-based theme in [src/app/globals.css](src/app/globals.css).
+
+**Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
+the action→reward loop. The Done control on the hero and every row is `BurnButton`, a client island:
+on tap it adds `.igniting` to the nearest `[data-burnable]` card, waits `BURN_MS`, then calls
+`markDone`. The animation (in [globals.css](src/app/globals.css)) is one registered `@property
+--flame` sweeping left to right; it drives a CSS `mask` that erases the card behind the front plus two
+flame bands whose gradient stops are pinned to `--flame`, distorted by an SVG fractal-noise filter
+(`#ember-fire`, defined once in `page.tsx`) so the edges lick and flicker. The card burns away, then
+collapses so the list closes the gap before the server revalidate drops the row. **Keep `BURN_MS`
+~50ms under the CSS total** (sweep + fall) so the action fires as the ash finishes; `prefers-reduced-
+motion` skips the class and completes instantly. Commitments burn too — honoring one moves it out of
+the burning slot anyway.
+
+**Streak** ([src/lib/streak.ts](src/lib/streak.ts)) — the retention hook, shown as the top-bar chip.
+`currentStreak(items, dones, now)` counts consecutive days (HKT) ending today on which you cleared
+what came due. The rule is **follow-through, not activity**: a day breaks the streak only if a task or
+commitment fell due that day (`deadline` day, or `commitmentDue` day) and no `done` Event landed that
+day; days with nothing due never break it, so a quiet stretch carries forward. Today is in progress,
+so it can only add. Reads the append-only `done` Events and every item's due date, so the board fetches
+the full table (not just open) for it. No DB column — it's derived each render.
 
 ## Conventions
 
