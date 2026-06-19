@@ -18,7 +18,6 @@ export type ItemFields = {
   type?: ItemType;
   category?: Category;
   important?: boolean;
-  urgent?: boolean;
   deadline?: string | null;
   referee?: Referee;
   cadence?: string | null;
@@ -57,12 +56,13 @@ const SYSTEM = `You are Ember, a personal accountability agent for Jules. You re
 What you know about Jules:
 - His problem is follow-through, not capture. Every item should end up with teeth: a deadline, a referee, or both.
 - Referees: "wife" for daily and avoided chores, "sister" for big life goals, "colleague" for work goals. Pick the best fit or null.
-- Types:
-  - "task": a concrete action, often one he avoids (dentist, paperwork). Usually important. Give it a deadline.
-  - "commitment": a big ongoing goal (build the company, upskill in AI). Set a cadence ("monthly") and a referee.
-  - "parking": a link, video, idea, restaurant, or trip for later. Not urgent. If he says "in N weeks/days", set snoozeDays.
+- Type is NOT set directly; it's derived from what you give the item. So decide the shape by setting the right field:
+  - A concrete one-off action he avoids (dentist, paperwork): set a "deadline". It becomes a task. Always give one a deadline.
+  - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("weekly"/"monthly") and a referee, no deadline. It becomes a commitment.
+  - A link, video, idea, restaurant, or trip for later: give it neither deadline nor cadence. It parks. If he says "in N weeks/days", set snoozeDays.
+- "important" is your judgment of whether it matters to his goals, not its timing. Set it true for anything consequential. There is no urgency flag: urgency comes from the deadline alone.
 - Categories, pick exactly one: "personal" (errands, admin, appointments, family, health paperwork), "finance" (money, bills, taxes, investing), "fitness" (training, gym, sleep), "work" (the Capgemini day job and client deliverables), "business" (his own side business), "learning" (upskilling, courses, AI, reading).
-- The death zone is important-but-not-urgent. If something is important with no deadline, lean toward giving it one.
+- The death zone is important things with no date. An important item with no deadline falls into parking and rots, so if it's important, give it a deadline.
 
 Deciding the action:
 - "create": a genuinely new thing to track. Fill every field. This is the default when the message doesn't refer to anything already open.
@@ -84,7 +84,6 @@ function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFi
   if (want("type") && raw.type != null) fields.type = raw.type as ItemType;
   if (want("category") && raw.category != null) fields.category = raw.category as Category;
   if (want("important") && raw.important != null) fields.important = raw.important as boolean;
-  if (want("urgent") && raw.urgent != null) fields.urgent = raw.urgent as boolean;
   // deadline / referee / cadence are nullable: when masked, an explicit null means "clear it".
   if (want("deadline")) fields.deadline = (raw.deadline as string | null) ?? null;
   if (want("referee")) fields.referee = (raw.referee as Referee) ?? null;
@@ -147,7 +146,6 @@ export async function interpret(
               enum: ["personal", "finance", "fitness", "work", "business", "learning", null],
             },
             important: { type: ["boolean", "null"] },
-            urgent: { type: ["boolean", "null"] },
             deadline: { type: ["string", "null"], description: "ISO date YYYY-MM-DD, or null" },
             referee: { type: ["string", "null"], enum: ["wife", "sister", "colleague", null] },
             cadence: { type: ["string", "null"], description: "e.g. monthly, weekly, or null" },

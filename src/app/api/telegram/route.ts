@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
+import { deriveType } from "@/lib/rank";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ async function completeItem(id: number): Promise<void> {
   const item = await prisma.item.findUnique({ where: { id } });
   if (!item) return;
   if (item.type === "commitment") {
+    // A fresh cycle starts clean, so the push tally resets too.
     await prisma.item.update({
       where: { id },
       data: {
@@ -36,6 +38,7 @@ async function completeItem(id: number): Promise<void> {
         lastNudgedAt: null,
         promisedAt: null,
         cycleStreak: { increment: 1 },
+        deferCount: 0,
       },
     });
   } else {
@@ -65,7 +68,11 @@ export async function POST(req: NextRequest) {
       await prisma.item
         .update({
           where: { id },
-          data: { snoozeUntil: snoozeUntil(snz[2], new Date()), lastNudgedAt: null },
+          data: {
+            snoozeUntil: snoozeUntil(snz[2], new Date()),
+            lastNudgedAt: null,
+            deferCount: { increment: 1 },
+          },
         })
         .catch(() => {});
       await logEvent(id, "snoozed");
@@ -90,7 +97,10 @@ export async function POST(req: NextRequest) {
       } else {
         const until = new Date(Date.now() + 86400000);
         await prisma.item
-          .update({ where: { id }, data: { snoozeUntil: until, lastNudgedAt: null } })
+          .update({
+            where: { id },
+            data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
+          })
           .catch(() => {});
         await logEvent(id, "snoozed");
         await answerCallback(cb.id, "Snoozed a day.");
@@ -160,7 +170,10 @@ export async function POST(req: NextRequest) {
       const days = Number(snooze[2]);
       const until = new Date(Date.now() + days * 86400000);
       await prisma.item
-        .update({ where: { id }, data: { snoozeUntil: until, lastNudgedAt: null } })
+        .update({
+          where: { id },
+          data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
+        })
         .catch(() => {});
       await logEvent(id, "snoozed");
       await sendMessage(chatId, `Snoozed #${id} for ${days} day(s).`);
@@ -171,9 +184,21 @@ export async function POST(req: NextRequest) {
     if (due) {
       const id = Number(due[1]);
       const date = new Date(due[2] + "T09:00:00+08:00");
+      const cur = await prisma.item.findUnique({ where: { id } });
+      const pushedLater = !!cur?.deadline && date.getTime() > cur.deadline.getTime();
       await prisma.item
-        .update({ where: { id }, data: { deadline: date, urgent: true } })
+        .update({
+          where: { id },
+          data: {
+            deadline: date,
+            type: deriveType(date, cur?.cadence ?? null),
+            snoozeUntil: null,
+            lastNudgedAt: null,
+            ...(pushedLater ? { deferCount: { increment: 1 } } : {}),
+          },
+        })
         .catch(() => {});
+      if (pushedLater) await logEvent(id, "snoozed");
       await sendMessage(chatId, `Deadline set on #${id}: ${due[2]}.`);
       return ok();
     }
@@ -232,7 +257,10 @@ export async function POST(req: NextRequest) {
       const days = intent.snoozeDays ?? 1;
       const until = new Date(Date.now() + days * 86400000);
       await prisma.item
-        .update({ where: { id: intent.itemId! }, data: { snoozeUntil: until, lastNudgedAt: null } })
+        .update({
+          where: { id: intent.itemId! },
+          data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
+        })
         .catch(() => {});
       await logEvent(intent.itemId!, "snoozed");
       await sendMessage(chatId, intent.reply);
@@ -240,31 +268,51 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.action === "update") {
+      const cur = await prisma.item.findUnique({ where: { id: intent.itemId! } });
       const data: Record<string, unknown> = {};
       if (f.title !== undefined) data.title = f.title;
-      if (f.type !== undefined) data.type = f.type;
       if (f.category !== undefined) data.category = f.category;
       if (f.important !== undefined) data.important = f.important;
-      if (f.urgent !== undefined) data.urgent = f.urgent;
-      if ("deadline" in f) data.deadline = toDeadline(f.deadline);
+      // Deadline and cadence drive the derived type; recompute it from the values
+      // that will be in place after this edit.
+      const newDeadline = "deadline" in f ? toDeadline(f.deadline) : cur?.deadline ?? null;
+      const newCadence = "cadence" in f ? f.cadence ?? null : cur?.cadence ?? null;
+      if ("deadline" in f) data.deadline = newDeadline;
       if ("referee" in f) data.referee = f.referee;
-      if ("cadence" in f) data.cadence = f.cadence;
+      if ("cadence" in f) data.cadence = newCadence;
+      data.type = deriveType(newDeadline, newCadence);
+      // A concrete date re-engages the item: drop any active snooze so the new
+      // deadline takes effect rather than staying pinned by an old defer.
+      if ("deadline" in f && newDeadline) {
+        data.snoozeUntil = null;
+        data.lastNudgedAt = null;
+      }
+      // Shoving the deadline out counts as a deferral.
+      const pushedLater =
+        "deadline" in f &&
+        !!cur?.deadline &&
+        !!newDeadline &&
+        newDeadline.getTime() > cur.deadline.getTime();
+      if (pushedLater) data.deferCount = { increment: 1 };
       await prisma.item.update({ where: { id: intent.itemId! }, data }).catch(() => {});
+      if (pushedLater) await logEvent(intent.itemId!, "snoozed");
       await sendMessage(chatId, intent.reply);
       return ok();
     }
 
-    // Default: create it.
+    // Default: create it. Type falls out of deadline + cadence, never the model's
+    // own guess, so the date is the single lever.
+    const newDeadline = toDeadline(f.deadline);
+    const newCadence = f.cadence ?? null;
     const item = await prisma.item.create({
       data: {
         title: f.title ?? text.slice(0, 80),
-        type: f.type ?? "task",
+        type: deriveType(newDeadline, newCadence),
         category: f.category ?? null,
         important: f.important ?? true,
-        urgent: f.urgent ?? false,
-        deadline: toDeadline(f.deadline),
+        deadline: newDeadline,
         referee: f.referee ?? null,
-        cadence: f.cadence ?? null,
+        cadence: newCadence,
         snoozeUntil: intent.snoozeDays
           ? new Date(Date.now() + intent.snoozeDays * 86400000)
           : null,

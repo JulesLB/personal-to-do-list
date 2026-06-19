@@ -11,9 +11,8 @@ datasource db {
 model Item {
   id           Int       @id @default(autoincrement())
   title        String
-  type         String    @default("task") // task | commitment | parking
-  important    Boolean   @default(true)
-  urgent       Boolean   @default(false)
+  type         String    @default("parking") // derived from deadline/cadence: cadence=commitment, deadline=task, neither=parking
+  important    Boolean   @default(true) // brain-owned (classifier); not user-editable
   deadline     DateTime?
   referee      String? // wife | sister | colleague
   category     String? // personal | finance | fitness | work | business | learning
@@ -27,6 +26,7 @@ model Item {
   cycleStreak  Int       @default(0) // commitments: consecutive cycles honored
   nudgeCount   Int       @default(0) // how many times this item has topped a sent nudge
   ignoreCount  Int       @default(0) // how many times it was re-nudged while still open (i.e. ignored)
+  deferCount   Int       @default(0) // times you actively pushed it away: snoozed, or moved the deadline later
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   events       Event[]

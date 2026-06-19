@@ -84,11 +84,23 @@ const soonLead = (cadence: string | null) =>
 const pastCommit = (item: Item, now: Date, at: Date) =>
   startOfDayHKT(now).getTime() >= startOfDayHKT(at).getTime();
 
+// Type is never set by hand: it falls out of the date controls. A cadence means
+// it repeats (commitment); a one-off date is a task; neither is parked. So the
+// only thing you set is a deadline and/or "repeats", and the type follows.
+export function deriveType(
+  deadline: Date | null,
+  cadence: string | null
+): "task" | "commitment" | "parking" {
+  if (cadence) return "commitment";
+  if (deadline) return "task";
+  return "parking";
+}
+
 export function rankScore(item: Item, now: Date): number {
   if (item.type === "parking") return -1;
 
+  // Urgency isn't a flag any more: deadline proximity below is the urgency.
   let s = item.important ? 40 : 15;
-  if (item.urgent) s += 10;
 
   if (item.type === "commitment") {
     if (pastCommit(item, now, commitmentCriticalAt(item))) return s + 50;
@@ -106,6 +118,19 @@ export function rankScore(item: Item, now: Date): number {
     s += 5;
   }
   return s;
+}
+
+// Color tone for the due label specifically. Tighter than the band heat: today
+// AND tomorrow read as burning (red), 2–3 days as soon (amber), the rest calm.
+// So "due tomorrow" is red even while the item still sits in the "Heating up"
+// band. Commitments key off their computed due date.
+export function dueTone(item: Item, now: Date): Heat {
+  const target = item.type === "commitment" ? commitmentDue(item) : item.deadline;
+  if (!target) return "later";
+  const cal = Math.round((startOfDayHKT(target).getTime() - startOfDayHKT(now).getTime()) / DAY);
+  if (cal <= 1) return "burning";
+  if (cal <= 3) return "soon";
+  return "later";
 }
 
 export function heatOf(item: Item, now: Date): Heat {
@@ -179,6 +204,52 @@ export function commitmentDueLabel(item: Item, now: Date): string {
   if (od > 0) return `due ${date} · ${od}d overdue`;
   if (od === 0) return `due ${date} · today`;
   return `due ${date}`;
+}
+
+// How many times you actively pushed an item away. Snoozing or shoving the
+// deadline later both count (bumped at the mutation site); this reads the tally
+// and grades it: one push is an orange warning, two is red, three or more is red
+// and animated. Visible from the first push so a single postpone isn't invisible.
+export type DeferTier = "low" | "high" | "alarm";
+
+export function deferState(item: Item): { count: number; tier: DeferTier } | null {
+  const n = item.deferCount;
+  if (n < 1) return null;
+  return { count: n, tier: n >= 3 ? "alarm" : n === 2 ? "high" : "low" };
+}
+
+// Parking is the undated drawer. Show how long something's sat there so a rotting
+// idea is visible, and flag it past the threshold so it forces a decision.
+export const STALE_PARKING_DAYS = 14;
+
+export function ageDaysHKT(createdAt: Date, now: Date): number {
+  return Math.round(
+    (startOfDayHKT(now).getTime() - startOfDayHKT(createdAt).getTime()) / DAY
+  );
+}
+
+export function parkingAgeLabel(createdAt: Date, now: Date): string {
+  const d = ageDaysHKT(createdAt, now);
+  if (d <= 0) return "added today";
+  if (d === 1) return "added yesterday";
+  return `added ${d}d ago`;
+}
+
+export function isStaleParking(item: Item, now: Date): boolean {
+  return item.type === "parking" && ageDaysHKT(item.createdAt, now) >= STALE_PARKING_DAYS;
+}
+
+// The date an item is "about": a task's deadline, a commitment's computed due.
+const effectiveDate = (item: Item): number =>
+  item.type === "commitment"
+    ? commitmentDue(item).getTime()
+    : item.deadline?.getTime() ?? Infinity;
+
+// Calmer bands (heating up, back burner) read better in plain chronological
+// order: heat already captured the urgency, so importance steps back here and
+// the soonest date comes first.
+export function sortByDate(rows: Ranked[]): Ranked[] {
+  return [...rows].sort((a, b) => effectiveDate(a.item) - effectiveDate(b.item));
 }
 
 export type Ranked = { item: Item; score: number; heat: Heat };

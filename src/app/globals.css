@@ -3,6 +3,7 @@
   --panel: #ffffff;
   --panel-2: #eef1f7;
   --line: #e5e9f2;
+  --line-strong: #cdd4e3;
   --text: #1b1e2b;
   --muted: #6c7387;
   --faint: #9aa1b6;
@@ -32,7 +33,7 @@ body {
 .wrap {
   max-width: 720px;
   margin: 0 auto;
-  padding: 28px 18px 64px;
+  padding: 8px 18px 64px;
 }
 
 /* Sticky filter bar: the six categories as equal-width chips. Three per row on
@@ -45,8 +46,8 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 7px;
-  margin: 0 -18px 18px;
-  padding: 11px 18px;
+  margin: 0 -18px 16px;
+  padding: 8px 18px 9px;
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -120,6 +121,8 @@ body {
   flex: 1;
   min-width: 0;
 }
+/* Filled red when it's burning (due today or overdue); a colored left edge by
+   urgency otherwise: amber for soon (due in a few days), faint for later. */
 .hero-burning {
   background: var(--burn);
   border-color: var(--burn-2);
@@ -164,9 +167,12 @@ body {
 .hero-burning .hero-meta .dl {
   color: rgba(255, 255, 255, 0.92);
 }
+/* In the hero, the category label matches the due text size (13px). */
+.hero-meta .cat {
+  font-size: 13px;
+}
 .hero-burning .hero-meta .cat {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 /* The hero body is tappable to edit; subtle affordance, no extra button. */
@@ -272,6 +278,9 @@ details.band[open] > summary.band-head::after {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+/* The band header keeps a quiet urgency tint on its label so the temperature
+   reads while scanning, but the band body itself is neutral white. Color budget
+   stays on the rows that are actually urgent. */
 .band-burning .band-head {
   color: var(--burn-text);
 }
@@ -279,27 +288,7 @@ details.band[open] > summary.band-head::after {
   color: var(--soon-text);
 }
 
-/* Each band carries a faint heat tint so the temperature reads at a glance:
-   warm red on fire, amber heating up, cool blue on the back burner, a neutral
-   lavender for parked ideas. Rows inside stay white so they stand out. */
-.band-burning {
-  background: #fdeee8;
-  border-color: #f6d6cb;
-}
-.band-soon {
-  background: #fff6df;
-  border-color: #f3e4b6;
-}
-.band-later {
-  background: #eef3fb;
-  border-color: #d8e3f3;
-}
-.band-parking {
-  background: #f1eff8;
-  border-color: #e0dcef;
-}
-
-/* Rows are white sub-boxes that sit on the tinted band. */
+/* Rows sit in a plain white band, separated by their own light border. */
 .feed {
   display: flex;
   flex-direction: column;
@@ -312,15 +301,14 @@ details.band[open] > summary.band-head::after {
   align-items: center;
   gap: 10px;
   background: #fff;
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--line-strong);
   border-radius: 10px;
   padding: 9px 11px;
 }
-.row.heat-burning {
+/* The only loud marker on a row: a red left edge when it's due today, tomorrow,
+   or overdue. Everything calmer carries no bar; urgency lives in the due text. */
+.row.tone-burning {
   border-left: 3px solid var(--burn);
-}
-.row.heat-soon {
-  border-left: 3px solid var(--soon);
 }
 
 /* Tap the row body to edit; cursor hints it, action buttons sit outside it. */
@@ -347,22 +335,24 @@ details.band[open] > summary.band-head::after {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
-/* Category pill: colored dot + label. Stronger tint, category-colored text and
-   a faint colored border so it reads clearly against the light rows. */
+/* Category is a quiet identifier, not a billboard: a small colored dot plus a
+   grey label. The hue lives only in the dot, so it never competes with the one
+   loud color (urgency) for attention. */
 .cat {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: color-mix(in srgb, var(--c) 18%, #fff);
-  color: color-mix(in srgb, var(--c) 68%, #14161f);
-  border: 1px solid color-mix(in srgb, var(--c) 32%, #fff);
-  padding: 2px 9px 2px 8px;
-  border-radius: 999px;
-  white-space: nowrap;
+  font-size: 11px;
   font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cat .dot {
+  width: 8px;
+  height: 8px;
 }
 
 .dl {
@@ -388,6 +378,67 @@ details.band[open] > summary.band-head::after {
   color: #fff;
 }
 
+/* "Pushed N times" / "decide it" flag: a blunt amber-red chip that holds up a
+   mirror when you keep shoving something away or letting it rot in parking. */
+.pushed {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--burn-soft);
+  color: var(--burn-text);
+  border: 1px solid color-mix(in srgb, var(--burn) 30%, #fff);
+  padding: 2px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.hero-meta .pushed {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: transparent;
+}
+
+/* The push tally as a single warning icon that grows louder with each defer:
+   orange at one, red at two, red and pulsing at three or more. Tooltip carries
+   the exact count, so the line stays uncluttered. */
+.defer-warn {
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+  filter: grayscale(1);
+}
+.defer-warn.low {
+  color: #e8870c;
+  filter: none;
+}
+.defer-warn.high {
+  color: var(--burn);
+  filter: none;
+}
+.defer-warn.alarm {
+  color: var(--burn);
+  filter: none;
+  animation: defer-pulse 1s ease-in-out infinite;
+}
+@keyframes defer-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    text-shadow: 0 0 0 rgba(229, 72, 77, 0);
+  }
+  50% {
+    transform: scale(1.25);
+    text-shadow: 0 0 8px rgba(229, 72, 77, 0.7);
+  }
+}
+
+
+/* How long a parked idea has sat there. */
+.age {
+  font-size: 11px;
+  color: var(--muted);
+}
+.row.stale .row-title {
+  font-weight: 600;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
@@ -395,21 +446,25 @@ details.band[open] > summary.band-head::after {
   flex-shrink: 0;
 }
 
-/* Light-green fill so the only row button reads clearly as "tap to complete"
-   against the white rows. */
+/* The one row button: a small, quiet grey circle with a grey tick, filled light
+   grey so it sits back in the layout. Hover deepens it slightly. */
 .done {
-  background: color-mix(in srgb, var(--done) 12%, #fff);
-  border: 1px solid color-mix(in srgb, var(--done) 35%, #fff);
-  color: var(--done);
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  border: 1.5px solid var(--line-strong);
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
   cursor: pointer;
 }
 .done:hover {
-  border-color: var(--done);
-  background: color-mix(in srgb, var(--done) 20%, #fff);
+  border-color: var(--muted);
+  background: var(--line-strong);
+  color: var(--text);
 }
 
 .band-parking .row-title {
@@ -485,17 +540,13 @@ details.band[open] > summary.band-head::after {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.ef-flags {
-  display: flex;
-  gap: 18px;
-  font-size: 13px;
-  color: var(--text);
-}
-.ef-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
+/* One-line explainer under the grid: spells out that the date and "repeats"
+   choice are what decide whether this is a task, commitment, or parked. */
+.ef-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 .ef-actions {
   display: flex;

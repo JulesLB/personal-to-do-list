@@ -15,9 +15,8 @@ datasource db {
 model Item {
   id           Int       @id @default(autoincrement())
   title        String
-  type         String    @default("task")
+  type         String    @default("parking")
   important    Boolean   @default(true)
-  urgent       Boolean   @default(false)
   deadline     DateTime?
   referee      String?
   category     String?
@@ -31,6 +30,7 @@ model Item {
   cycleStreak  Int       @default(0)
   nudgeCount   Int       @default(0)
   ignoreCount  Int       @default(0)
+  deferCount   Int       @default(0)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   events       Event[]

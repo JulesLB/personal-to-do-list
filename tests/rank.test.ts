@@ -8,6 +8,12 @@ import {
   rankActionable,
   commitmentDue,
   commitmentDueLabel,
+  deriveType,
+  deferState,
+  dueTone,
+  sortByDate,
+  parkingAgeLabel,
+  isStaleParking,
 } from "../src/lib/rank";
 import { make, NOW, daysAgo, daysAhead } from "./factory";
 
@@ -22,9 +28,9 @@ describe("rankScore", () => {
     );
   });
 
-  it("urgent adds weight", () => {
-    expect(rankScore(make({ urgent: true }), NOW)).toBeGreaterThan(
-      rankScore(make({ urgent: false }), NOW)
+  it("a nearer deadline outscores a far-future one (urgency comes from the date)", () => {
+    expect(rankScore(make({ deadline: daysAhead(0) }), NOW)).toBeGreaterThan(
+      rankScore(make({ deadline: daysAhead(30) }), NOW)
     );
   });
 
@@ -101,11 +107,66 @@ describe("promisedToday", () => {
 describe("rankActionable", () => {
   it("drops parking and sorts by score descending", () => {
     const items = [
-      make({ id: 1, important: false }),
+      make({ id: 1, important: false, deadline: daysAhead(20) }),
       make({ id: 2, type: "parking" }),
-      make({ id: 3, important: true, urgent: true, deadline: daysAhead(-1) }),
+      make({ id: 3, important: true, deadline: daysAhead(-1) }),
     ];
     expect(rankActionable(items, NOW).map((r) => r.item.id)).toEqual([3, 1]);
+  });
+});
+
+describe("deriveType (date is the only lever)", () => {
+  it("a cadence makes it a commitment, deadline or not", () => {
+    expect(deriveType(null, "weekly")).toBe("commitment");
+    expect(deriveType(daysAhead(3), "monthly")).toBe("commitment");
+  });
+
+  it("a one-off date makes it a task", () => {
+    expect(deriveType(daysAhead(3), null)).toBe("task");
+  });
+
+  it("neither date nor cadence parks it", () => {
+    expect(deriveType(null, null)).toBe("parking");
+  });
+});
+
+describe("deferState", () => {
+  it("grades the push tally: hidden at zero, then low / high / alarm", () => {
+    expect(deferState(make({ deferCount: 0 }))).toBeNull();
+    expect(deferState(make({ deferCount: 1 }))).toEqual({ count: 1, tier: "low" });
+    expect(deferState(make({ deferCount: 2 }))).toEqual({ count: 2, tier: "high" });
+    expect(deferState(make({ deferCount: 3 }))).toEqual({ count: 3, tier: "alarm" });
+    expect(deferState(make({ deferCount: 9 }))?.tier).toBe("alarm");
+  });
+});
+
+describe("dueTone (due-label color)", () => {
+  it("treats today and tomorrow as burning, 2-3 days as soon, beyond as later", () => {
+    expect(dueTone(make({ deadline: daysAhead(0) }), NOW)).toBe("burning");
+    expect(dueTone(make({ deadline: daysAhead(1) }), NOW)).toBe("burning");
+    expect(dueTone(make({ deadline: daysAhead(3) }), NOW)).toBe("soon");
+    expect(dueTone(make({ deadline: daysAhead(6) }), NOW)).toBe("later");
+  });
+});
+
+describe("sortByDate (calm bands)", () => {
+  it("orders by the effective date, soonest first, regardless of importance", () => {
+    const rows = rankActionable(
+      [
+        make({ id: 1, important: true, deadline: daysAhead(6) }),
+        make({ id: 2, important: false, deadline: daysAhead(5) }),
+      ],
+      NOW
+    );
+    expect(sortByDate(rows).map((r) => r.item.id)).toEqual([2, 1]);
+  });
+});
+
+describe("parking age", () => {
+  it("labels how long it's sat and flags it once stale", () => {
+    expect(parkingAgeLabel(daysAgo(20), NOW)).toBe("added 20d ago");
+    expect(isStaleParking(make({ type: "parking", createdAt: daysAgo(20) }), NOW)).toBe(true);
+    expect(isStaleParking(make({ type: "parking", createdAt: daysAgo(3) }), NOW)).toBe(false);
   });
 });
 
