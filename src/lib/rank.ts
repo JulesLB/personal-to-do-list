@@ -29,7 +29,7 @@ const HK_OFFSET = 8 * 60 * 60 * 1000;
 const startOfDayHKT = (d: Date) =>
   new Date(Math.floor((d.getTime() + HK_OFFSET) / DAY) * DAY - HK_OFFSET);
 
-const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
+export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
 
 // Did you tap "I'll do it today" earlier today (HKT)? The evening check uses
 // this to call out a promise you made this morning and haven't kept.
@@ -40,19 +40,49 @@ export function promisedToday(item: Item, now: Date): boolean {
   );
 }
 
-const cadenceDays = (cadence: string | null) =>
-  cadence === "weekly" ? 7 : cadence === "daily" ? 1 : 30;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Days since the commitment was last honored. Keys off lastDoneAt (not
-// lastNudgedAt) so nudging a commitment never resets its overdue clock, and
-// completing one cycle pushes the next due date out by a full period.
-const sinceLastDone = (item: Item, now: Date) =>
-  (now.getTime() - (item.lastDoneAt ?? item.createdAt).getTime()) / DAY;
+// HKT calendar parts of an instant.
+const hktYMD = (d: Date) => {
+  const s = new Date(d.getTime() + HK_OFFSET);
+  return { y: s.getUTCFullYear(), m: s.getUTCMonth(), day: s.getUTCDate() };
+};
 
-// How far past the cadence period a commitment has drifted, in cycles.
-// 1.0 = exactly one period elapsed (due now); 2.0 = a full extra cycle missed.
-const cadenceProgress = (item: Item, now: Date) =>
-  sinceLastDone(item, now) / cadenceDays(item.cadence);
+// The instant at 09:00 HKT (= 01:00 UTC) on a given HKT calendar date, matching
+// how deadlines are stored.
+const hktAt9 = (y: number, m: number, day: number) => new Date(Date.UTC(y, m, day, 1, 0, 0));
+
+const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+
+// When a commitment is next due: its anchor (last honored, or created if never)
+// plus one cadence period, calendar-accurate. Weekly lands on the same weekday;
+// monthly keeps the same day-of-month, clamped to the target month's length so
+// 31 Jan -> 28 Feb. Keys off lastDoneAt, not lastNudgedAt, so nudging never
+// resets the clock and honoring a cycle pushes the due date out by a full period.
+export function commitmentDue(item: Item): Date {
+  const { y, m, day } = hktYMD(item.lastDoneAt ?? item.createdAt);
+  if (item.cadence === "daily") return hktAt9(y, m, day + 1);
+  if (item.cadence === "weekly") return hktAt9(y, m, day + 7);
+  const nm = m + 1;
+  const year = y + Math.floor(nm / 12);
+  const month = ((nm % 12) + 12) % 12;
+  return hktAt9(year, month, Math.min(day, daysInMonth(year, month)));
+}
+
+// One more period past the due date: the "you skipped a whole extra cycle" line.
+const commitmentCriticalAt = (item: Item): Date =>
+  commitmentDue({ ...item, lastDoneAt: commitmentDue(item) } as Item);
+
+// Calendar days (HKT) the current cycle is past due. Negative = not due yet.
+const overdueDaysCommit = (item: Item, now: Date) =>
+  Math.round((startOfDayHKT(now).getTime() - startOfDayHKT(commitmentDue(item)).getTime()) / DAY);
+
+// How early a commitment starts "heating up" before its due date.
+const soonLead = (cadence: string | null) =>
+  cadence === "monthly" ? 7 : cadence === "daily" ? 1 : 2;
+
+const pastCommit = (item: Item, now: Date, at: Date) =>
+  startOfDayHKT(now).getTime() >= startOfDayHKT(at).getTime();
 
 export function rankScore(item: Item, now: Date): number {
   if (item.type === "parking") return -1;
@@ -61,8 +91,8 @@ export function rankScore(item: Item, now: Date): number {
   if (item.urgent) s += 10;
 
   if (item.type === "commitment") {
-    const p = cadenceProgress(item, now);
-    return s + (p >= 2 ? 50 : p >= 1 ? 40 : 5);
+    if (pastCommit(item, now, commitmentCriticalAt(item))) return s + 50;
+    return s + (overdueDaysCommit(item, now) >= 0 ? 40 : 5);
   }
 
   if (item.deadline) {
@@ -80,9 +110,9 @@ export function rankScore(item: Item, now: Date): number {
 
 export function heatOf(item: Item, now: Date): Heat {
   if (item.type === "commitment") {
-    const p = cadenceProgress(item, now);
-    if (p >= 1) return "burning";
-    if (p >= 0.75) return "soon";
+    const od = overdueDaysCommit(item, now);
+    if (od >= 0) return "burning";
+    if (od >= -soonLead(item.cadence)) return "soon";
     return "later";
   }
   if (!item.deadline) return "later";
@@ -95,9 +125,7 @@ export function heatOf(item: Item, now: Date): Heat {
 // Positive = past due. Tasks: calendar days past the deadline (HKT).
 // Commitments: days drifted beyond one cadence period. -Infinity = not applicable.
 export function daysOverdue(item: Item, now: Date): number {
-  if (item.type === "commitment") {
-    return Math.floor(sinceLastDone(item, now) - cadenceDays(item.cadence));
-  }
+  if (item.type === "commitment") return overdueDaysCommit(item, now);
   if (!item.deadline) return -Infinity;
   return Math.round(
     (startOfDayHKT(now).getTime() - startOfDayHKT(item.deadline).getTime()) / DAY
@@ -107,7 +135,7 @@ export function daysOverdue(item: Item, now: Date): number {
 // The accountability trigger: blunt copy + referee-first buttons.
 // Tasks 3+ days overdue, or a commitment that has missed a full extra cycle.
 export function isCritical(item: Item, now: Date): boolean {
-  if (item.type === "commitment") return cadenceProgress(item, now) >= 2;
+  if (item.type === "commitment") return pastCommit(item, now, commitmentCriticalAt(item));
   return item.type === "task" && !!item.deadline && daysOverdue(item, now) >= 3;
 }
 
@@ -139,6 +167,18 @@ export function dueInLabel(deadline: Date | null, now: Date): string | null {
 export function cadenceLabel(cadence: string | null): string | null {
   if (!cadence) return null;
   return cadence === "daily" ? "daily" : cadence === "weekly" ? "weekly" : "monthly";
+}
+
+// A commitment's due date is computed from cadence (never typed). Shows the date
+// so "on fire" always has a visible reason: "due 19 Jul", "due 19 Jul · 3d overdue".
+export function commitmentDueLabel(item: Item, now: Date): string {
+  const due = commitmentDue(item);
+  const { m, day } = hktYMD(due);
+  const date = `${day} ${MONTHS[m]}`;
+  const od = overdueDaysCommit(item, now);
+  if (od > 0) return `due ${date} · ${od}d overdue`;
+  if (od === 0) return `due ${date} · today`;
+  return `due ${date}`;
 }
 
 export type Ranked = { item: Item; score: number; heat: Heat };

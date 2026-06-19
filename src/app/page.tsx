@@ -1,11 +1,26 @@
+import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { markDone, remove, retire } from "./actions";
-import { rankActionable, dueInLabel, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { markDone, remove, retire, promote } from "./actions";
+import { rankActionable, dueInLabel, commitmentDueLabel, cadenceLabel, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { waLink } from "@/lib/waLink";
+import { EditModal, type EditableItem } from "./EditModal";
+import { SnoozeMenu } from "./SnoozeMenu";
 
 export const dynamic = "force-dynamic";
 
 const meta = (c: string | null) => (c && c in CATEGORIES ? CATEGORIES[c as Category] : null);
+
+const toEditable = (i: Item): EditableItem => ({
+  id: i.id,
+  title: i.title,
+  type: i.type,
+  category: i.category,
+  important: i.important,
+  urgent: i.urgent,
+  deadline: i.deadline ? isoHKT(i.deadline) : null,
+  referee: i.referee,
+  cadence: i.cadence,
+});
 
 // A small colored-dot pill: same look on the top filter row and on each task.
 function Cat({ c }: { c: string | null }) {
@@ -48,7 +63,12 @@ export default async function Board({
           <div className="row-title">{i.title}</div>
           <div className="row-meta">
             <Cat c={i.category} />
-            {i.deadline ? <span className={`dl dl-${r.heat}`}>{dueInLabel(i.deadline, now)}</span> : null}
+            {i.type === "commitment" ? (
+              <span className={`dl dl-${r.heat}`}>{commitmentDueLabel(i, now)}</span>
+            ) : i.deadline ? (
+              <span className={`dl dl-${r.heat}`}>{dueInLabel(i.deadline, now)}</span>
+            ) : null}
+            {i.type === "commitment" && i.cadence ? <span className="ref">{cadenceLabel(i.cadence)}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
           </div>
         </div>
@@ -56,6 +76,8 @@ export default async function Board({
           <form action={markDone.bind(null, i.id)}>
             <button className="done" aria-label={i.type === "commitment" ? "honored this cycle" : "mark done"}>✓</button>
           </form>
+          <SnoozeMenu id={i.id} />
+          <EditModal item={toEditable(i)} />
           {i.type === "commitment" ? (
             <form action={retire.bind(null, i.id)}>
               <button className="del" aria-label="retire commitment" title="Retire for good">×</button>
@@ -100,7 +122,14 @@ export default async function Board({
           <div className="hero-title">{hero.item.title}</div>
           <div className="hero-meta">
             <Cat c={hero.item.category} />
-            {hero.item.deadline ? <span className="dl">{dueInLabel(hero.item.deadline, now)}</span> : null}
+            {hero.item.type === "commitment" ? (
+              <span className="dl">{commitmentDueLabel(hero.item, now)}</span>
+            ) : hero.item.deadline ? (
+              <span className="dl">{dueInLabel(hero.item.deadline, now)}</span>
+            ) : null}
+            {hero.item.type === "commitment" && hero.item.cadence ? (
+              <span className="ref ref-hero">{cadenceLabel(hero.item.cadence)}</span>
+            ) : null}
             {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
           </div>
           <div className="hero-actions">
@@ -112,6 +141,8 @@ export default async function Board({
                 Tell {hero.item.referee}
               </a>
             ) : null}
+            <SnoozeMenu id={hero.item.id} />
+            <EditModal item={toEditable(hero.item)} />
             {hero.item.type === "commitment" ? (
               <form action={retire.bind(null, hero.item.id)}>
                 <button className="retire-lg" title="Retire this commitment for good">Retire</button>
@@ -181,6 +212,10 @@ export default async function Board({
                   </div>
                 </div>
                 <div className="row-actions">
+                  <form action={promote.bind(null, i.id)}>
+                    <button className="promote" title="Promote to a task">↑ Task</button>
+                  </form>
+                  <EditModal item={toEditable(i)} />
                   <form action={remove.bind(null, i.id)}>
                     <button className="del" aria-label="drop">×</button>
                   </form>

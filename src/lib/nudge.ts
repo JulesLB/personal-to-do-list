@@ -4,6 +4,7 @@ import {
   rankActionable,
   deadlineLabel,
   cadenceLabel,
+  commitmentDueLabel,
   heatOf,
   daysOverdue,
   isCritical,
@@ -45,7 +46,7 @@ function escalationDraft(it: Item, now: Date): string {
 function metaLine(it: Item, now: Date, withReferee: boolean): string {
   return [
     catLabel(it.category),
-    deadlineLabel(it.deadline, now),
+    it.type === "commitment" ? commitmentDueLabel(it, now) : deadlineLabel(it.deadline, now),
     it.type === "commitment" ? cadenceLabel(it.cadence) : null,
     withReferee && it.referee ? `referee: ${it.referee}` : null,
   ]
@@ -88,16 +89,21 @@ function buttons(it: Item, tier: Tier, now: Date, broken: boolean): InlineKeyboa
   const link = waLink(it.referee, escalationDraft(it, now));
   const tell = link && it.referee ? { text: `Tell ${it.referee}`, url: link } : null;
 
-  let row: InlineKeyboard["inline_keyboard"][number];
   if (broken || tier === "escalate") {
     // Referee goes first: the point is the social cost, not the checkbox.
-    row = tell ? [tell, done, today] : [done, today];
-  } else if (tier === "push") {
-    row = tell ? [done, today, tell] : [done, today];
-  } else {
-    row = [done, { text: "Snooze 1d", callback_data: `snooze:${it.id}` }];
+    return { inline_keyboard: [tell ? [tell, done, today] : [done, today]] };
   }
-  return { inline_keyboard: [row] };
+  if (tier === "push") {
+    return { inline_keyboard: [tell ? [done, today, tell] : [done, today]] };
+  }
+  // calm: nothing's on fire, so offer to defer with intent.
+  const snooze = [
+    { text: "Tonight", callback_data: `snz:${it.id}:tonight` },
+    { text: "Tomorrow", callback_data: `snz:${it.id}:tomorrow` },
+    { text: "Weekend", callback_data: `snz:${it.id}:weekend` },
+    { text: "Next wk", callback_data: `snz:${it.id}:nextweek` },
+  ];
+  return { inline_keyboard: [[done], snooze] };
 }
 
 export function buildDailyNudge(

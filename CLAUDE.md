@@ -17,7 +17,9 @@ the UTC server. The single user is based in Hong Kong.
 ## Commands
 
 ```bash
-npm run dev             # Next.js dev server on :3000
+npm run dev             # Next.js dev server on :3000 (uses the cloud DB in .env)
+npm run dev:local       # board against an isolated, seeded SQLite DB (offline UI work, safe sandbox)
+npm run try -- "<msg>"  # dry-run the intent router against local items, no Telegram (read-only)
 npm run build           # prisma generate && next build (type-check gate)
 npm run db:migrate       # prisma migrate dev — create + apply a migration after editing the schema
 npm run db:migrate:deploy # prisma migrate deploy — apply pending migrations (what Vercel runs)
@@ -41,9 +43,12 @@ migration locally, commit the generated SQL. On deploy, Vercel runs `vercel-buil
 automatically against the prod DB — no manual `db push` step. `DIRECT_URL` (session pooler, 5432)
 must be set in Vercel for migrations to run.
 
-`db push` is retained only for the fully-offline SQLite path: switch `provider` in the schema to
-`sqlite`, set `DATABASE_URL="file:./dev.db"`, run `npm run db:push`, and switch both back before
-committing. Don't mix `db push` and migrate against the same Postgres DB.
+For offline work run `npm run dev:local` (or `npm run try`), which point at an isolated SQLite DB via
+a **separate** [prisma/schema.sqlite.prisma](prisma/schema.sqlite.prisma) and never touch the tracked
+Postgres schema or prod. Orchestrated by [scripts/dev-local.mjs](scripts/dev-local.mjs) /
+[scripts/try.mjs](scripts/try.mjs), which inject `DATABASE_URL` and launch the CLIs as `node <bin>`
+(Windows can't spawn a `.cmd`). Keep the two schemas' models in sync. After local work, any
+`npm run build` regenerates the Postgres client. Don't mix `db push` and migrate on the same DB.
 
 ## Architecture
 
@@ -66,26 +71,36 @@ Completing a **commitment** does not close it: it sets `lastDoneAt = now`, clear
 `retire` is the explicit "end it for good" path (`status = retired`). Tasks still close on done.
 
 **Ranking is the core IP** ([src/lib/rank.ts](src/lib/rank.ts)). `rankScore` collapses
-importance + urgency + deadline proximity + (for commitments) cadence-overdue into one number.
-`heatOf` buckets an item into `burning` / `soon` / `later` for display (commitments go `burning`
-once they're a full cadence cycle overdue). `daysOverdue` and `isCritical` drive escalation;
-`promisedToday` flags a broken same-day promise. All day boundaries use `startOfDayHKT`. Parking
-items score `-1` and are excluded from the actionable list. There are no quadrants — the score
-decides order. The board and both nudge slots consume `rankActionable`.
+importance + urgency + deadline proximity + (for commitments) how far past due into one number. A
+commitment's due date is **computed, not stored**: `commitmentDue` adds one cadence period to
+`lastDoneAt` (or `createdAt`) calendar-accurately — weekly = same weekday, monthly = same
+day-of-month clamped to the month's length (31 Jan → 28 Feb). `heatOf` buckets an item into
+`burning` / `soon` / `later` (a commitment is `burning` once now ≥ its due date, `soon` within a
+cadence-sized lead); `daysOverdue` and `isCritical` (a commitment a full extra period past due) drive
+escalation; `promisedToday` flags a broken same-day promise. `commitmentDueLabel` renders the
+computed date ("due 19 Jul · 3d overdue") for the board and nudge, so "on fire" always shows a reason.
+All day boundaries use `startOfDayHKT`. Parking items score `-1` and are excluded. No quadrants — the
+score decides order. The board and both nudge slots consume `rankActionable`.
 
-**Classification** ([src/lib/classify.ts](src/lib/classify.ts)) — one Claude call with a forced
-`save_item` tool to turn a messy sentence into a `Classified` object. The system prompt encodes
-Jules-specific rules (which referee for what, the six categories, the important-but-not-urgent
-"death zone"). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the
-only model called anywhere in the app.
+**Classification / intent routing** ([src/lib/classify.ts](src/lib/classify.ts)) — `interpret` is one
+Claude call with a forced `route` tool that turns a messy sentence into an `Intent`: an `action`
+(`create | update | complete | snooze | retire | query | clarify`), an optional target `itemId`
+resolved against the open list by fuzzy title match, and (for updates) the masked fields to change.
+Ambiguous edits return `clarify` with a single question instead of guessing. The system prompt
+encodes Jules-specific rules (which referee for what, the six categories, the important-but-not-urgent
+"death zone"). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the only
+model called anywhere in the app.
 
 **Telegram webhook** ([src/app/api/telegram/route.ts](src/app/api/telegram/route.ts)) — the main
-input surface. Handles inline button callbacks (`done:`/`today:`/`snooze:<id>`) and typed commands
-(`list`, `done <id>`, `snooze <id> <days>`, `due <id> YYYY-MM-DD`, `retire <id>`) via regex; anything
-else falls through to `classify` and gets stored. `done` routes through `completeItem` (commitment-
-aware, see above) and logs a `done` Event; `today:` sets `promisedAt` (deliberately *not* a snooze,
-so the evening sweep can catch it still open) and logs `promised`. Deadlines are stored at `09:00
-HKT` (`T09:00:00+08:00`).
+input surface. Handles inline button callbacks (`done:`/`today:`/`snooze:<id>`, plus
+`snz:<id>:<preset>` for the snooze presets) and typed commands (`list`, `done <id>`,
+`snooze <id> <days>`, `due <id> YYYY-MM-DD`, `retire <id>`) via regex as fast paths; anything else
+goes to `interpret`, which decides create vs. edit and dispatches (create/update/complete/snooze/
+retire/query/clarify). A mutation with a missing or hallucinated target falls back to asking rather
+than touching the wrong item; every change is echoed back. `done` routes through `completeItem`
+(commitment-aware, see above) and logs a `done` Event; `today:` sets `promisedAt` (deliberately *not*
+a snooze, so the evening sweep can catch it still open) and logs `promised`. Deadlines are stored at
+`09:00 HKT` (`T09:00:00+08:00`).
 Auth is the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET`. Always returns
 200 (even on internal error) so Telegram doesn't retry.
 
@@ -95,7 +110,8 @@ pure (items → text + keyboard + topId) and imports no DB/Telegram, so it's uni
 calls: it reads the DB, sends the message, and writes accountability memory (bumps `nudgeCount`,
 bumps `ignoreCount` when it re-nudges an item that's still open, appends a `nudged` Event). Two
 slots: `morning` always reports in (or "clean slate"); `evening` is an honesty check
-that stays silent unless something is pressing. Pressure has three tiers — `calm` (Done/Snooze),
+that stays silent unless something is pressing. Pressure has three tiers — `calm` (Done + a row of
+snooze presets: tonight/tomorrow/weekend/next week, see [src/lib/snooze.ts](src/lib/snooze.ts)),
 `push` (burning: Done / I'll-do-it-today / Tell referee), `escalate` (task 3+ days overdue or
 commitment past 2 cadence cycles: referee button goes *first*, copy turns blunt). If you tapped
 "I'll do it today" and it's still open that evening, the evening nudge leads with a broken-promise
@@ -109,17 +125,22 @@ message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` p
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
 Two once-daily jobs fit the Vercel Hobby limit.
 
-**Web board** ([src/app/page.tsx](src/app/page.tsx)) — read-mostly server component; mutations go
-through server actions in [src/app/actions.ts](src/app/actions.ts). Layout top to bottom: a row of
+**Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
+mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
+`remove`, `updateItem`, `snoozeItem`, `promote`). Layout top to bottom: a row of
 category filter chips (a colored dot, the label, and the open count per area), the burning hero
 (`#1`), then the rest split into three heat bands — "On fire" (always shown) / "Heating up" (open by
 default) / "Back burner" (collapsed) — and a collapsed parking lot, each band a `<details>` with its
 count in brackets. Clicking a chip sets `?cat=<key>` and filters the hero, bands, and parking lot to
 that category; the chip counts stay global so you can switch, and clicking the active chip clears the
 filter. The page reads the filter from the awaited `searchParams` (Next 15 async). Category renders
-as a small colored dot-pill on both the chips and each row; deadlines render via `dueInLabel`
-("due in 10 days", in days even past a week). Rows are no longer numbered. Commitments get a retire
-control alongside done. Protected by [src/middleware.ts](src/middleware.ts), which checks an
+as a small colored dot-pill on both the chips and each row; task deadlines render via `dueInLabel`
+("due in 10 days", in days even past a week) and commitments show their computed due date + cadence
+via `commitmentDueLabel`. Rows are no longer numbered. Each row/hero has inline actions: done, a
+snooze-preset menu ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)), and an edit modal
+([src/app/EditModal.tsx](src/app/EditModal.tsx), the one client component) that can change any
+classified field; commitments also get retire, parking items get a one-tap "promote to task".
+Protected by [src/middleware.ts](src/middleware.ts), which checks an
 `app_auth` cookie against `APP_SECRET`; `/login`, `/api`, and assets are left open. `/api/login` sets
 the cookie. Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css).
 

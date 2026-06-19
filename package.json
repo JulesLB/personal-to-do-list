@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "node scripts/dev-local.mjs",
+    "try": "node scripts/try.mjs",
     "build": "prisma generate && next build",
     "vercel-build": "prisma migrate deploy && prisma generate && next build",
     "start": "next start",
@@ -28,6 +30,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "prisma": "^6.19.3",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
