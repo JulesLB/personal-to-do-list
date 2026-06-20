@@ -146,15 +146,21 @@ Two once-daily jobs fit the Vercel Hobby limit.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
-`remove`, `updateItem`, `snoozeItem`). Layout top to bottom: a **top bar** (the Ember logo + the
-**streak chip**), then a **sticky** filter bar of the six
+`remove`, `updateItem`, `snoozeItem`, `createItem`). Layout top to bottom: a **top bar** — a
+`1fr/auto/1fr` grid with the Ember logo left, the **streak chip** dead-center, and a circular **"+"
+add button** right ([src/app/AddItem.tsx](src/app/AddItem.tsx), matched to the chip's 32px height).
+The board is a second create surface alongside Telegram: "+" opens a modal with the same levers as the
+edit panel (title, category, referee, deadline, repeats) and calls `createItem`, which mirrors the
+Telegram create path — `deriveType` from deadline+cadence, `important` defaults true. Then a
+**sticky** filter bar of the six
 categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
 **hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
 (always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
 lot" (collapsed), the collapsible ones a `<details>` with its count. The visual system is **one
 color, one job**: category is a quiet colored dot, the single loud color is urgency via `dueTone`
 (red = due today/tomorrow/overdue, amber = 2–3 days, neutral beyond) shown on the due text and a red
-left-bar on `tone-burning` rows, green means Done only, and bands are plain white (only the header
+left-bar on `tone-burning` rows; a row that is **strictly past due** (`daysOverdue > 0`) also fills
+light red (`.overdue`) so overdue items jump out, not just the thin bar. Green means Done only, and bands are plain white (only the header
 label carries the urgency tint). The hero is the exception: it fills red when burning and takes an
 amber/faint left edge by `heatOf` otherwise. Every band (hero, "On fire", and the calm
 "Heating up" / "Back burner") uses the one `compareActionable` order — soonest due date first,
