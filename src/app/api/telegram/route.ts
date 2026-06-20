@@ -15,12 +15,25 @@ const ok = () => NextResponse.json({ ok: true });
 const toDeadline = (d: string | null | undefined) =>
   d ? new Date(d + "T09:00:00+08:00") : null;
 
-const rememberOwner = (chatId: number | string) =>
-  prisma.setting.upsert({
+// Single-user bot. The webhook secret only proves the request came from Telegram,
+// not which user sent it, so we lock the bot to one chat: trust the first chat that
+// talks to us (or OWNER_CHAT_ID if set), then refuse every other chat. Never
+// overwrite a known owner — that overwrite was how a stranger could read the list
+// and hijack the nudges. Returns false for an unauthorized chat.
+async function ensureOwner(chatId: number | string): Promise<boolean> {
+  const known =
+    (await prisma.setting.findUnique({ where: { key: "ownerChatId" } }))?.value ??
+    process.env.OWNER_CHAT_ID ??
+    null;
+  if (known) return String(chatId) === String(known);
+  // First contact and no owner configured: learn this chat as the owner.
+  await prisma.setting.upsert({
     where: { key: "ownerChatId" },
     update: { value: String(chatId) },
     create: { key: "ownerChatId", value: String(chatId) },
   });
+  return true;
+}
 
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
@@ -56,12 +69,15 @@ export async function POST(req: NextRequest) {
 
   const update = await req.json().catch(() => null);
 
+  // Lock the bot to its owner before doing anything. A message and a callback
+  // carry the chat id in different places; reject any chat that isn't the owner.
+  const incomingChatId = update?.callback_query?.message?.chat?.id ?? update?.message?.chat?.id;
+  if (!incomingChatId) return ok();
+  if (!(await ensureOwner(incomingChatId))) return ok();
+
   // Inline button taps from the daily nudge.
   const cb = update?.callback_query;
   if (cb) {
-    const cbChatId = cb.message?.chat?.id;
-    if (cbChatId) await rememberOwner(cbChatId);
-
     // Snooze presets from the calm nudge keyboard: snz:<id>:<preset>.
     const snz = String(cb.data ?? "").match(/^snz:(\d+):(\w+)$/);
     if (snz && isSnoozePreset(snz[2])) {
@@ -131,9 +147,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (!text) return ok();
-
-  // Single user: remember who is talking so the cron knows where to nudge.
-  await rememberOwner(chatId);
 
   const lower = text.toLowerCase();
 
