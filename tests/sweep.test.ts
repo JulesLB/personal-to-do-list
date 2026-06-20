@@ -7,7 +7,7 @@ import type { Item } from "@prisma/client";
 const db = vi.hoisted(() => ({
   setting: { findUnique: vi.fn() },
   item: { findMany: vi.fn(), update: vi.fn() },
-  event: { create: vi.fn() },
+  event: { create: vi.fn(), findFirst: vi.fn() },
 }));
 
 vi.mock("../src/lib/db", () => ({ prisma: db }));
@@ -15,12 +15,23 @@ vi.mock("../src/lib/db", () => ({ prisma: db }));
 import { runSweep } from "../src/lib/sweep";
 
 const overdue = (): Item => make({ id: 1, deadline: new Date(Date.now() - 86400000) });
+// Critical (3+ days overdue), important, with an opted-in referee.
+const DAY = 86400000;
+const criticalWithReferee = (): Item =>
+  make({ id: 1, title: "File taxes", deadline: new Date(Date.now() - 5 * DAY), referee: "wife" });
 
 beforeEach(() => {
   vi.clearAllMocks();
   db.setting.findUnique.mockResolvedValue({ key: "ownerChatId", value: "999" });
   db.item.update.mockResolvedValue(undefined);
   db.event.create.mockResolvedValue(undefined);
+  db.event.findFirst.mockResolvedValue(null);
+  // A referee is only "opted in" with a real number; default it on for the
+  // escalation tests, off otherwise.
+  delete process.env.WIFE_WHATSAPP;
+  delete process.env.WHATSAPP_TOKEN;
+  delete process.env.WHATSAPP_PHONE_ID;
+  delete process.env.WHATSAPP_TEMPLATE;
 });
 
 describe("runSweep", () => {
@@ -59,5 +70,37 @@ describe("runSweep", () => {
     // The pressing item gets its accountability memory bumped.
     expect(db.item.update).toHaveBeenCalledTimes(1);
     expect(db.event.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns first when a critical item has an opted-in referee", async () => {
+    process.env.WIFE_WHATSAPP = "+85291234567";
+    db.item.findMany.mockResolvedValue([criticalWithReferee()]);
+    const send = vi.fn().mockResolvedValue(undefined);
+
+    await runSweep("morning", send);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1].toLowerCase()).toContain("last warning");
+    // nudged + escalation_warned written; no told_referee yet.
+    const kinds = db.event.create.mock.calls.map((c) => c[0].data.kind);
+    expect(kinds).toContain("escalation_warned");
+    expect(kinds).not.toContain("told_referee");
+  });
+
+  it("degrades to the one-tap draft past the warning when WhatsApp is unset", async () => {
+    process.env.WIFE_WHATSAPP = "+85291234567";
+    db.item.findMany.mockResolvedValue([criticalWithReferee()]);
+    // The warning already went out this cycle.
+    db.event.findFirst.mockImplementation(({ where }: { where: { kind: string } }) =>
+      Promise.resolve(where.kind === "escalation_warned" ? { id: 1 } : null)
+    );
+    const send = vi.fn().mockResolvedValue(undefined);
+
+    await runSweep("morning", send);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1].toLowerCase()).toContain("isn't set up");
+    const kinds = db.event.create.mock.calls.map((c) => c[0].data.kind);
+    expect(kinds).not.toContain("told_referee");
   });
 });

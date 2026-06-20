@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
+import { createRefereeToken } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
@@ -155,6 +156,25 @@ export async function POST(req: NextRequest) {
       await sendMessage(
         chatId,
         'Ember here. Text me anything and I log it. You can also edit in plain English: "push the dentist to Friday", "the gym thing is weekly", "drop the tax idea", "did the call". Commands still work: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
+      );
+      return ok();
+    }
+
+    // Mint a referee link to forward. Owner-only (the whole webhook is), and the
+    // URL itself carries a signed token, so it's safe to hand to the referee.
+    const reflink = lower.match(/^\/?reflink\s+(wife|sister|colleague)/);
+    if (reflink) {
+      const label = reflink[1];
+      const secret = process.env.APP_SECRET;
+      const base = process.env.APP_URL;
+      if (!secret || !base) {
+        await sendMessage(chatId, "Can't mint a link: APP_SECRET or APP_URL isn't set.");
+        return ok();
+      }
+      const token = await createRefereeToken(label, secret);
+      await sendMessage(
+        chatId,
+        `Referee link for your ${label}. Forward it to them:\n${base}/referee/${token}`
       );
       return ok();
     }

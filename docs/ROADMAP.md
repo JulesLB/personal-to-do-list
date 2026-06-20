@@ -26,7 +26,7 @@ Status values: `TODO` · `IN PROGRESS` · `DONE` · `PARKED`.
 |---|---|---|---|---|---|
 | M0a | Remove the empty-state morning ping | Remove | S | P1 | DONE |
 | M0b | Collapse the defer warning to one state | Remove | S | P2 | DONE |
-| M2 | Close the referee loop *(the moat)* | Improve | L | **P0** | TODO |
+| M2 | Close the referee loop *(the moat)* | Improve | L | **P0** | BUILT · awaiting Meta setup |
 | M3 | Weekly receipts | Add | M | P1 | TODO |
 | M5 | First-run activation | Improve | M | P1 | TODO |
 | M6 | Commit templates | Add | S | P2 | TODO |
@@ -109,7 +109,48 @@ how much it is nagging tips from motivating into punishing.
 
 ## M2 · Close the referee loop  *(the moat)*
 
-**Decision: Improve · Effort: L · Priority: P0 · Status: TODO · Maps to PRD-6, PRD-7**
+**Decision: Improve · Effort: L · Priority: P0 · Status: BUILT (awaiting Meta setup to go live) · Maps to PRD-6, PRD-7**
+
+**Shipped (code).** The full graduated ladder, the referee-can-poke-back loop, and a real
+server-controlled WhatsApp channel are built and tested (57 tests green, build clean), on branch
+`phase-2-referee`.
+- M2a: pure ladder in [src/lib/escalate.ts](src/lib/escalate.ts) (`none → warn → send`), wired into
+  [src/lib/sweep.ts](src/lib/sweep.ts). Critical + important + opted-in referee → warns once
+  (`escalation_warned` Event), then auto-sends on the next sweep (`told_referee` Event) and tells the
+  owner what went out. Hard guards: at most one send per cycle, only `important` items, only an
+  opted-in referee; no opted-in referee escalates copy but never sends. WhatsApp send via the Meta
+  Cloud API in [src/lib/referee.ts](src/lib/referee.ts); when the channel isn't configured it degrades
+  to the existing one-tap `wa.me` draft instead of going silent.
+- M2b: signed, no-account referee links (`createRefereeToken`/`verifyRefereeToken` in
+  [src/lib/auth.ts](src/lib/auth.ts), reusing the session-token HMAC), a tokenized page at
+  [src/app/referee/[token]/page.tsx](src/app/referee/[token]/page.tsx) showing only that referee's
+  overdue items with a "Poke {owner}" button that pings the owner's bot and logs a `poked` Event.
+  Mint a link by texting the bot `reflink wife`. `/referee` excluded from the board middleware.
+
+**Remaining to go live (RESUME HERE).** The code is done; only the Meta WhatsApp Cloud API account
+setup is left (parked 2026-06-20 — Meta registration couldn't be completed that day). Until these env
+vars are set, auto-send falls back to the one-tap `wa.me` draft and everything else works. Steps:
+
+1. **Create the app** — developers.facebook.com → Create App → type **Business** → add the **WhatsApp**
+   product.
+2. **Test sender + recipient** — WhatsApp → API Setup. Copy the **Phone number ID** (`WHATSAPP_PHONE_ID`).
+   Add the wife's number under "To" (up to 5 free recipients), confirm the one-time code.
+3. **Template** — WhatsApp → Message Templates → Create, category **Utility**, language **en**, name
+   `ember_accountability`. Body must match `renderEscalation` in [src/lib/referee.ts](src/lib/referee.ts)
+   exactly: `Accountability alert from Ember. {{1}} committed to "{{2}}" and keeps dodging it. Your job:
+   chase them to completion. No mercy.` Submit, wait for approval (minutes).
+4. **Permanent token** — Business Settings → System Users → create → assign the app → generate a token
+   with `whatsapp_business_messaging` (`WHATSAPP_TOKEN`; the API-setup token expires in 24h).
+5. **Env vars** (local `.env` *and* Vercel): `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`,
+   `WHATSAPP_TEMPLATE=ember_accountability`, `WHATSAPP_LANG=en`, `WIFE_WHATSAPP=+852…`, `OWNER_NAME=Jules`.
+   See [.env.example](.env.example).
+6. **Test** — text the bot `reflink wife` and open the link to verify the referee view. For a live send,
+   point a test item ~5 days overdue and let two sweeps run (or build the optional on-demand
+   `/escalate-test` trigger first).
+
+Cost: free on the test number (5 recipients); pennies per utility template on a production number.
+
+**Decision: Improve · Effort: L · Priority: P0 · Maps to PRD-6, PRD-7**
 
 **Why.** Escalation is Ember's whole reason to exist, and today it is a button that drafts a WhatsApp
 message *for you to send to yourself's referee*. In [src/lib/nudge.ts](src/lib/nudge.ts), `buttons()` puts
@@ -145,12 +186,14 @@ Split into two shippable halves.
 - Optional opt-in weekly digest to the referee. All referee actions logged as Events.
 
 **Definition of done.**
-- [ ] An important item dodged past the warning, with an opted-in referee, triggers exactly one auto-send
+- [x] An important item dodged past the warning, with an opted-in referee, triggers exactly one auto-send
       through the server-controlled channel and one owner notification. A `told_referee` Event is written.
-- [ ] The same item with no opted-in referee escalates copy but never auto-sends.
-- [ ] A referee can open their tokenized link, see the overdue item, and send one poke that reaches the
+      *(Logic + guards verified by `escalate.test.ts` / `sweep.test.ts`; the actual WhatsApp send goes
+      live once the Meta env is set.)*
+- [x] The same item with no opted-in referee escalates copy but never auto-sends.
+- [x] A referee can open their tokenized link, see the overdue item, and send one poke that reaches the
       owner in Telegram.
-- [ ] Every escalation step has an `Event` row.
+- [x] Every escalation step has an `Event` row.
 
 **Touches.** [src/lib/nudge.ts](src/lib/nudge.ts), [src/lib/sweep.ts](src/lib/sweep.ts),
 [src/lib/waLink.ts](src/lib/waLink.ts), a new `sendToReferee` module, a new referee-link route under

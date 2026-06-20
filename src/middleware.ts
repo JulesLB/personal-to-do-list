@@ -10,9 +10,11 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Protect the board; leave the login page, API routes, and static files open.
-// The `.*\..*` clause skips anything with a file extension (e.g. /logo.png) so
-// public assets aren't redirected to /login — that was breaking the login logo.
+// Protect the board; leave the login page, API routes, static files, and the
+// tokenized referee pages open. `referee` is excluded because a referee has no
+// board password — the signed token in the URL is their auth. The `.*\..*`
+// clause skips anything with a file extension (e.g. /logo.png) so public assets
+// aren't redirected to /login — that was breaking the login logo.
 export const config = {
-  matcher: ["/((?!login|api|_next|.*\\..*).*)"],
+  matcher: ["/((?!login|api|referee|_next|.*\\..*).*)"],
 };

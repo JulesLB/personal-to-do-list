@@ -62,3 +62,31 @@ export async function verifySessionToken(token: string | undefined, secret: stri
   if (!safeEqual(sig, await hmac(secret, exp))) return false;
   return Number(exp) > Math.floor(Date.now() / 1000);
 }
+
+// Referee links (M2b): a referee gets a signed, no-account URL that shows only
+// the items they referee. The token carries the referee label, signed and
+// expiring like the session token, so no row or password is needed. Three
+// dot-parts ("<label>.<exp>.<sig>") vs the session token's two keeps them
+// distinct. Reuses APP_SECRET, so rotating it invalidates referee links too.
+const REFEREE_TTL_SEC = 60 * 60 * 24 * 90; // 90 days
+
+export async function createRefereeToken(label: string, secret: string): Promise<string> {
+  const exp = String(Math.floor(Date.now() / 1000) + REFEREE_TTL_SEC);
+  const payload = `${label}.${exp}`;
+  return `${payload}.${await hmac(secret, payload)}`;
+}
+
+export async function verifyRefereeToken(
+  token: string | undefined,
+  secret: string
+): Promise<string | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [label, exp, sig] = parts;
+  if (!/^[a-z]+$/.test(label)) return null;
+  if (!/^\d+$/.test(exp)) return null;
+  if (!safeEqual(sig, await hmac(secret, `${label}.${exp}`))) return null;
+  if (Number(exp) <= Math.floor(Date.now() / 1000)) return null;
+  return label;
+}

@@ -145,6 +145,35 @@ which rejects numbers under 8 digits so a placeholder can't render a dead link) 
 message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` pure — that's what
 `preview-nudge.ts` relies on.
 
+**Referee escalation (M2, the moat)** — the one thing a free to-do app can't copy: a real
+consequence with a real person. The pure ladder is `escalationStep` in
+[src/lib/escalate.ts](src/lib/escalate.ts), returning `none | warn | send`: an item that is
+`important` **and** `isCritical` **and** has an **opted-in** referee gets warned once ("tap it, or next
+time I message your wife myself"), then auto-sent on the next sweep. Hard guards: at most **one
+auto-send per cycle** (a `told_referee` Event after the cycle anchor blocks re-sends; for commitments
+the anchor is `lastDoneAt`, so honoring a cycle resets the ladder), only `important` items, only an
+opted-in referee — no referee means the copy still escalates but nothing sends. `runSweep` resolves the
+rung (`escalationFor`, the only impure part: it reads the `Event` table for prior `escalation_warned` /
+`told_referee`), folds the warning into the same nudge, and on `send` calls `sendToReferee`. The send
+channel is the **Meta WhatsApp Cloud API** ([src/lib/referee.ts](src/lib/referee.ts)) — a server can't
+send a `wa.me` link, so real auto-send needs a channel it controls. It posts an approved **template**
+(business-initiated WhatsApp must be a template, not free text) with two vars (owner name, item title);
+`renderEscalation` mirrors the template body so the owner sees exactly what went out. A referee is
+**opted in** when `<LABEL>_WHATSAPP` is set and `<LABEL>_CONSENT !== "false"`; auto-send also needs
+`WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_TEMPLATE`. **When the channel isn't configured the
+`send` rung degrades to the existing one-tap `wa.me` draft** (already on the escalate keyboard) and
+tells the owner, rather than going silent or lying. Escalation is logged at every step, never silent.
+
+**Referee link (M2b)** — a referee holds you accountable without an account. `createRefereeToken` /
+`verifyRefereeToken` ([src/lib/auth.ts](src/lib/auth.ts)) sign the referee label into a 90-day HMAC
+token (same Web Crypto path as the session token; three dot-parts vs the session's two keeps them
+distinct, keyed by `APP_SECRET`). The page
+[src/app/referee/[token]/page.tsx](src/app/referee/[token]/page.tsx) shows **only that referee's
+overdue items** and a **"Poke {owner}"** button — a server action that re-verifies the token, pings the
+owner's Telegram, and logs a `poked` Event. Mint and forward a link by texting the bot
+`reflink <wife|sister|colleague>`. The board middleware **excludes `/referee`** (the token is the auth,
+the board password isn't involved). New `Event` kinds: `escalation_warned`, `told_referee`, `poked`.
+
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
 `Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
 the response omits `chatId` so an unauthenticated probe leaks nothing. Reads `?slot=evening` (defaults
