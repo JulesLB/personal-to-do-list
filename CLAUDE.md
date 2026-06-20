@@ -191,14 +191,20 @@ card-based theme in [src/app/globals.css](src/app/globals.css).
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
 the action→reward loop. The Done control on the hero and every row is `BurnButton`, a client island:
 on tap it adds `.igniting` to the nearest `[data-burnable]` card, waits `BURN_MS`, then calls
-`markDone`. The animation (in [globals.css](src/app/globals.css)) is one registered `@property
---flame` sweeping left to right; it drives a CSS `mask` that erases the card behind the front plus two
-flame bands whose gradient stops are pinned to `--flame`, distorted by an SVG fractal-noise filter
-(`#ember-fire`, defined once in `page.tsx`) so the edges lick and flicker. The card burns away, then
-collapses so the list closes the gap before the server revalidate drops the row. **Keep `BURN_MS`
-~50ms under the CSS total** (sweep + fall) so the action fires as the ash finishes; `prefers-reduced-
-motion` skips the class and completes instantly. Commitments burn too — honoring one moves it out of
-the burning slot anyway.
+`markDone`. The animation (in [globals.css](src/app/globals.css)) sweeps a flame front left to right:
+the card is erased by animating **`mask-position`** (a fixed transparent→black gradient, 3× the card
+wide, slid across so black=visible turns to transparent=ash), and two flame bands ride the front by
+animating **`transform: translateX`**, distorted by an SVG fractal-noise filter (`#ember-fire`,
+defined once in `page.tsx`) so the edges lick and flicker. The card burns away, then collapses so the
+list closes the gap before the server revalidate drops the row. **The motion lives on
+`mask-position`/`transform` for a reason: don't move it back onto a registered `@property` animated
+inside the mask/gradient `calc()`.** That earlier version rendered on desktop Chrome but silently
+failed on mobile (iOS Safari, Android Chrome don't repaint a mask/background gradient when only a
+custom property inside its `calc()` changes), so the flames never showed and the row just blinked out.
+The `#ember-fire` filter is now decorative — if a browser drops it the bands still read as fire.
+**Keep `BURN_MS` ~50ms under the CSS total** (sweep + fall) so the action fires as the ash finishes;
+`prefers-reduced-motion` skips the class and completes instantly. Commitments burn too — honoring one
+moves it out of the burning slot anyway.
 
 **Streak** ([src/lib/streak.ts](src/lib/streak.ts)) — the retention hook, shown as the top-bar chip.
 `currentStreak(items, dones, now)` counts consecutive days (HKT) ending today on which you cleared
