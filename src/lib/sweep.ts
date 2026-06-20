@@ -32,10 +32,9 @@ export async function runSweep(
 
   const nudge = buildDailyNudge(live, now, slot);
   if (!nudge) {
-    // Morning always reports in; evening stays silent when nothing is pressing.
-    if (slot === "morning") {
-      await send(chatId, "Nothing pressing. Clean slate. Text me something to chase.");
-    }
+    // Both slots stay silent when nothing is pressing. A ping on a quiet day
+    // teaches the user to swipe the bot away unread, spending the trust the
+    // nudge depends on. The "clean slate" win moves to the weekly receipts (M3).
     return { sent: 0, chatId, topId: null };
   }
 

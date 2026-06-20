@@ -196,15 +196,13 @@ export function commitmentDueLabel(item: Item, now: Date): string {
 }
 
 // How many times you actively pushed an item away. Snoozing or shoving the
-// deadline later both count (bumped at the mutation site); this reads the tally
-// and grades it: one push is an orange warning, two is red, three or more is red
-// and animated. Visible from the first push so a single postpone isn't invisible.
-export type DeferTier = "low" | "high" | "alarm";
-
-export function deferState(item: Item): { count: number; tier: DeferTier } | null {
+// deadline later both count (bumped at the mutation site); this reads the tally.
+// One bit of signal — "you keep dodging this" — shown the same way regardless of
+// count. Visible from the first push so a single postpone isn't invisible.
+export function deferState(item: Item): { count: number } | null {
   const n = item.deferCount;
   if (n < 1) return null;
-  return { count: n, tier: n >= 3 ? "alarm" : n === 2 ? "high" : "low" };
+  return { count: n };
 }
 
 // Parking is the undated drawer. Show how long something's sat there so a rotting

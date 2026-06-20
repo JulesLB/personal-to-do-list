@@ -510,38 +510,13 @@ details.band[open] > summary.band-head::after {
   border-color: transparent;
 }
 
-/* The push tally as a single warning icon that grows louder with each defer:
-   orange at one, red at two, red and pulsing at three or more. Tooltip carries
-   the exact count, so the line stays uncluttered. */
+/* The push tally as one steady warning marker, same style at any count. The
+   tooltip carries the exact count, so the line stays uncluttered. */
 .defer-warn {
   font-size: 13px;
   line-height: 1;
   cursor: default;
-  filter: grayscale(1);
-}
-.defer-warn.low {
   color: #e8870c;
-  filter: none;
-}
-.defer-warn.high {
-  color: var(--burn);
-  filter: none;
-}
-.defer-warn.alarm {
-  color: var(--burn);
-  filter: none;
-  animation: defer-pulse 1s ease-in-out infinite;
-}
-@keyframes defer-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    text-shadow: 0 0 0 rgba(229, 72, 77, 0);
-  }
-  50% {
-    transform: scale(1.25);
-    text-shadow: 0 0 8px rgba(229, 72, 77, 0.7);
-  }
 }
 
 

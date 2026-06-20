@@ -71,14 +71,14 @@ export default async function Board({
         ? dueInLabel(i.deadline, now)
         : null;
 
-  // The push tally as one escalating warning icon: orange at one push, red at two,
-  // red and pulsing at three or more. The count lives in the tooltip.
+  // The push tally as one steady warning marker — "you keep dodging this." Same
+  // style regardless of count; the exact count lives in the tooltip.
   const Pushed = ({ i }: { i: Item }) => {
     const d = deferState(i);
     if (!d) return null;
     return (
       <span
-        className={`defer-warn ${d.tier}`}
+        className="defer-warn"
         title={`Pushed ${d.count} time${d.count > 1 ? "s" : ""}`}
         aria-label={`Pushed ${d.count} times`}
       >

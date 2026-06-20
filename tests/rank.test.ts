@@ -151,12 +151,11 @@ describe("deriveType (date is the only lever)", () => {
 });
 
 describe("deferState", () => {
-  it("grades the push tally: hidden at zero, then low / high / alarm", () => {
+  it("reports the push tally: hidden at zero, then just the count", () => {
     expect(deferState(make({ deferCount: 0 }))).toBeNull();
-    expect(deferState(make({ deferCount: 1 }))).toEqual({ count: 1, tier: "low" });
-    expect(deferState(make({ deferCount: 2 }))).toEqual({ count: 2, tier: "high" });
-    expect(deferState(make({ deferCount: 3 }))).toEqual({ count: 3, tier: "alarm" });
-    expect(deferState(make({ deferCount: 9 }))?.tier).toBe("alarm");
+    expect(deferState(make({ deferCount: 1 }))).toEqual({ count: 1 });
+    expect(deferState(make({ deferCount: 2 }))).toEqual({ count: 2 });
+    expect(deferState(make({ deferCount: 9 }))).toEqual({ count: 9 });
   });
 });
 
