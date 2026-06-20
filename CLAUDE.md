@@ -133,8 +133,9 @@ pure (items → text + keyboard + topId) and imports no DB/Telegram, so it's uni
 `runSweep(slot)` in [src/lib/sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper the cron
 calls: it reads the DB, sends the message, and writes accountability memory (bumps `nudgeCount`,
 bumps `ignoreCount` when it re-nudges an item that's still open, appends a `nudged` Event). Two
-slots: `morning` always reports in (or "clean slate"); `evening` is an honesty check
-that stays silent unless something is pressing. Pressure has three tiers — `calm` (Done + a row of
+slots, and **both stay silent when nothing is pressing** — there is no empty-state "clean slate"
+ping, since a notification on a quiet day just teaches you to swipe the bot away unread (the win
+moves to the weekly receipts, M3). When something *is* pressing, pressure has three tiers — `calm` (Done + a row of
 snooze presets: tonight/tomorrow/weekend/next week, see [src/lib/snooze.ts](src/lib/snooze.ts)),
 `push` (burning: Done / I'll-do-it-today / Tell referee), `escalate` (task 3+ days overdue or
 commitment past 2 cadence cycles: referee button goes *first*, copy turns blunt). If you tapped
@@ -182,8 +183,9 @@ filters the hero + bands; the chip counts stay global; clicking the active chip 
 (there is no logo/reset control). The page reads the filter from the awaited `searchParams` (Next 15
 async). Category renders as a colored dot + grey label; task deadlines render via `dueInLabel` ("due
 in 10 days", in days even past a week) and commitments show their computed due date the same way
-(`dueInLabel(commitmentDue(...))`). Repeated dodges surface as one escalating ⚠ via `deferState`
-(orange at 1 push, red at 2, red + pulse at 3+). **Tap a row or the hero body to edit** — the edit panel
+(`dueInLabel(commitmentDue(...))`). Repeated dodges surface as one steady amber ⚠ via `deferState`
+(shown from the first push, same style at any count; the exact tally lives in the tooltip — the
+old orange/red/pulsing tiers were collapsed to one marker). **Tap a row or the hero body to edit** — the edit panel
 ([src/app/EditTrigger.tsx](src/app/EditTrigger.tsx), a client component) opens on the body click, so
 there is no edit button. The panel exposes only the levers you actually control — title, category,
 referee, deadline, and a **"Repeats"** select (none / daily / weekly / monthly = the cadence). Type
