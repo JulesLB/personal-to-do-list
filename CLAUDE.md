@@ -149,7 +149,10 @@ message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` p
 the response omits `chatId` so an unauthenticated probe leaks nothing. Reads `?slot=evening` (defaults
 to morning). Two jobs in
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
-Two once-daily jobs fit the Vercel Hobby limit.
+Two once-daily jobs fit the Vercel Hobby limit. `vercel.json` also pins **`regions: ["icn1"]`**
+(Seoul) so every serverless function runs in the same region as the Supabase DB (`ap-northeast-2`);
+without it Vercel defaults to US-East and each DB round trip crosses the Pacific (the board fires
+several per interaction) — that was the main source of board lag.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
@@ -160,7 +163,8 @@ The board is a second create surface alongside Telegram: "+" opens a modal with 
 edit panel (title, category, referee, deadline, repeats) and calls `createItem`, which mirrors the
 Telegram create path — `deriveType` from deadline+cadence, `important` defaults true. Then a
 **sticky** filter bar of the six
-categories as **equal-width chips** (a colored dot, the label, the open count), then the burning
+categories as **equal-width chips** (a colored dot, the label, the open count; opaque fill, not a
+backdrop blur, so scrolling the list under it doesn't re-blur every frame), then the burning
 **hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
 (always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
 lot" (collapsed), the collapsible ones a `<details>` with its count. The visual system is **one
@@ -197,7 +201,9 @@ Edge), which the middleware verifies in constant time. `/api/login` checks the t
 `APP_SECRET` (constant-time) and issues the token in a `secure` cookie; rotating `APP_SECRET`
 invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
 a file extension open (the last so static assets like `/logo.png` aren't redirected to `/login`).
-Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css).
+Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css). A calm skeleton
+([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. tapping a filter) during the
+dynamic re-render, which shows mainly on a cold serverless start.
 
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
 the action→reward loop. The Done control on the hero and every row is `BurnButton`, a client island:
@@ -205,17 +211,28 @@ on tap it adds `.igniting` to the nearest `[data-burnable]` card, waits `BURN_MS
 `markDone`. The animation (in [globals.css](src/app/globals.css)) sweeps a flame front left to right:
 the card is erased by animating **`mask-position`** (a fixed transparent→black gradient, 3× the card
 wide, slid across so black=visible turns to transparent=ash), and two flame bands ride the front by
-animating **`transform: translateX`**, distorted by an SVG fractal-noise filter (`#ember-fire`,
-defined once in `page.tsx`) so the edges lick and flicker. The card burns away, then collapses so the
-list closes the gap before the server revalidate drops the row. **The motion lives on
-`mask-position`/`transform` for a reason: don't move it back onto a registered `@property` animated
-inside the mask/gradient `calc()`.** That earlier version rendered on desktop Chrome but silently
-failed on mobile (iOS Safari, Android Chrome don't repaint a mask/background gradient when only a
-custom property inside its `calc()` changes), so the flames never showed and the row just blinked out.
-The `#ember-fire` filter is now decorative — if a browser drops it the bands still read as fire.
-**Keep `BURN_MS` ~50ms under the CSS total** (sweep + fall) so the action fires as the ash finishes;
-`prefers-reduced-motion` skips the class and completes instantly. Commitments burn too — honoring one
-moves it out of the burning slot anyway.
+animating **`transform: translateX`** (with a small `translateY` bob) under an **opacity shimmer** —
+all compositor-only. **The motion lives on `mask-position`/`transform`/`opacity` for a reason: keep it
+off the main thread.** Two earlier per-frame costs were stripped: (1) a registered `@property` animated
+inside the mask/gradient `calc()` — desktop Chrome repainted it each frame but mobile (iOS Safari,
+Android Chrome) didn't, so the flames never showed and the row just blinked out; (2) the `#ember-fire`
+SVG fractal-noise filter was animated via SMIL (`<animate>` on `baseFrequency`/`scale`), regenerating
+the whole noise field every frame on the CPU — that was the visible lag. The filter is now **static**
+(baked once for a torn edge) and decorative; if a browser drops it the bands still read as fire, and
+the flicker comes from the opacity/transform, not the filter.
+
+When the burn ends, `BurnButton` adds **`.burned`** (`display:none`) to the card *before* calling
+`markDone`, so the spent row leaves layout on the client at once. This kills a real lag: a collapsed
+(`max-height:0`) row in a flex-`gap` column still holds its surrounding gap open, and that remnant only
+closed when `revalidatePath` re-rendered the board and React unmounted the node — on a slow/cold render
+you'd watch the card collapse, pause, then the gap snap shut. **`BURN_MS` now sits just *past* the CSS
+total** (sweep + fall) so the card is fully collapsed before it's hidden. Because `.burned` is added
+imperatively, **every `[data-burnable]` surface must be keyed by item id**: rows already are, and the
+hero is now `key={hero.item.id}`. Without it React reuses the single hero slot, and when the next hero
+shares the same `heat` the `className` prop is unchanged so React never clears the stale `.burned` —
+the promoted hero renders invisible (a bug that shipped and got fixed here). `prefers-reduced-motion`
+skips the whole thing and completes instantly. Commitments burn too — honoring one moves it out of the
+burning slot anyway.
 
 **Streak** ([src/lib/streak.ts](src/lib/streak.ts)) — the retention hook, shown as the top-bar chip.
 `currentStreak(items, dones, now)` counts consecutive days (HKT) ending today on which you cleared
@@ -223,7 +240,9 @@ what came due. The rule is **follow-through, not activity**: a day breaks the st
 commitment fell due that day (`deadline` day, or `commitmentDue` day) and no `done` Event landed that
 day; days with nothing due never break it, so a quiet stretch carries forward. Today is in progress,
 so it can only add. Reads the append-only `done` Events and every item's due date, so the board fetches
-the full table (not just open) for it. No DB column — it's derived each render.
+the full table (not just open) for it — one batched `prisma.$transaction([items, doneEvents])`, with
+the open list derived from `allItems` in memory instead of a separate query. No DB column — it's derived
+each render.
 
 ## Conventions
 

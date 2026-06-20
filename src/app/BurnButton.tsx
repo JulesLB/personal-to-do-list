@@ -3,9 +3,9 @@
 import { useRef, useTransition } from "react";
 import { markDone } from "./actions";
 
-// The card's burn-to-ash animation runs first, then the server drops the row.
-// Kept just under the CSS duration (~1.3s) so the action fires as the ash finishes.
-const BURN_MS = 1280;
+// The burn-to-ash animation runs first (~1.3s of flame sweep + collapse). BURN_MS
+// sits just past the CSS total so the card is fully collapsed before we hide it.
+const BURN_MS = 1320;
 
 // Replaces the plain Done form. On tap it sets the nearest [data-burnable] card
 // alight, waits for the flames, then calls markDone (which revalidates and removes
@@ -30,7 +30,17 @@ export function BurnButton({
     const go = () => start(() => markDone(id));
     if (card && !reduce) {
       card.classList.add("igniting");
-      window.setTimeout(go, BURN_MS);
+      window.setTimeout(() => {
+        // Close the gap the moment the burn finishes, on the client. The card
+        // collapses to max-height:0, but in a flex column with a gap a zero-height
+        // row still holds its surrounding gap open — and that remnant only closed
+        // when revalidate re-rendered the board and React unmounted the node. On a
+        // slow (dev / cold) render that wait was the lag you felt "when it
+        // disappears". Hiding it now makes the disappear instant; markDone still
+        // runs and drops the already-hidden node in the background.
+        card.classList.add("burned");
+        go();
+      }, BURN_MS);
     } else {
       go();
     }

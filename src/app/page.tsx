@@ -41,13 +41,15 @@ export default async function Board({
   const active = cat && cat in CATEGORIES ? (cat as Category) : null;
 
   const now = new Date();
-  const allOpen = await prisma.item.findMany({ where: { status: "open" } });
-  // The streak reads done Events (cleared a fire) and every item's due date
-  // (a fire was due that day), so it needs the full table, not just open items.
-  const [allItems, dones] = await Promise.all([
+  // One batched round trip for the whole render. The streak needs the full table
+  // (done/retired rows too: a fire that was due and cleared), so we fetch every
+  // item plus the done events, then derive the open list in memory. allOpen is a
+  // strict subset of allItems, so querying it separately was a wasted round trip.
+  const [allItems, dones] = await prisma.$transaction([
     prisma.item.findMany(),
     prisma.event.findMany({ where: { kind: "done" }, select: { createdAt: true } }),
   ]);
+  const allOpen = allItems.filter((i) => i.status === "open");
   const streak = currentStreak(allItems, dones, now);
   const countFor = (c: Category) =>
     allOpen.filter((i) => i.type !== "parking" && i.category === c).length;
@@ -162,10 +164,12 @@ export default async function Board({
 
   return (
     <main className="wrap">
-      {/* Defined once: the fractal-noise filter that distorts the burn-to-ash
-          flames so their edges lick and flicker. Animated via SMIL so the fire
-          keeps moving the whole time a card is alight. Referenced from .igniting
-          in globals.css. */}
+      {/* Defined once: the fractal-noise filter that gives the burn-to-ash flames
+          a torn, licked edge. Static on purpose — the noise is baked a single time,
+          not re-generated per frame (the old SMIL <animate> version regenerated the
+          whole noise field 60x a second on the CPU, which was the lag). The motion,
+          sweep + flicker, lives on transform/opacity in globals.css (.igniting), the
+          two things the GPU animates for free. */}
       <svg aria-hidden width="0" height="0" style={{ position: "absolute" }}>
         <filter
           id="ember-fire"
@@ -177,32 +181,18 @@ export default async function Board({
         >
           <feTurbulence
             type="fractalNoise"
-            baseFrequency="0.012 0.026"
+            baseFrequency="0.02 0.045"
             numOctaves={3}
             seed={7}
             result="noise"
-          >
-            <animate
-              attributeName="baseFrequency"
-              dur="0.5s"
-              values="0.012 0.026;0.02 0.05;0.014 0.03;0.012 0.026"
-              repeatCount="indefinite"
-            />
-          </feTurbulence>
+          />
           <feDisplacementMap
             in="SourceGraphic"
             in2="noise"
-            scale="54"
+            scale="46"
             xChannelSelector="R"
             yChannelSelector="G"
-          >
-            <animate
-              attributeName="scale"
-              dur="0.5s"
-              values="54;70;42;54"
-              repeatCount="indefinite"
-            />
-          </feDisplacementMap>
+          />
         </filter>
       </svg>
 
@@ -249,7 +239,13 @@ export default async function Board({
       </nav>
 
       {hero ? (
-        <section className={`hero hero-${hero.heat}`} data-burnable>
+        // Keyed by item id so each promoted hero gets its own fresh node. The hero
+        // is a single reused slot; without a key React keeps the same element when
+        // the top item changes, and the burn's imperative .burned class (display:none)
+        // sticks to it whenever the next hero shares the same heat (the className prop
+        // is unchanged, so React never clears it) — the new hero stayed hidden. The
+        // key forces unmount + remount, dropping .burned. Rows are already id-keyed.
+        <section key={hero.item.id} className={`hero hero-${hero.heat}`} data-burnable>
           <div className="hero-left">
             <div className="hero-kicker">
               {hero.heat === "burning" ? "🔥 Do this first" : "Top priority"}

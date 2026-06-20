@@ -143,7 +143,7 @@ body {
 
 /* Sticky filter bar: the six categories as equal-width chips. Three per row on
    mobile (two rows), six across on wider screens. Sticks to the top on scroll and
-   breaks out of the wrap gutters so the blurred bar spans full width. */
+   breaks out of the wrap gutters so the bar spans full width. */
 .filters {
   position: sticky;
   top: 0;
@@ -153,9 +153,10 @@ body {
   gap: 7px;
   margin: 0 -18px 16px;
   padding: 8px 18px 9px;
-  background: color-mix(in srgb, var(--bg) 80%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  /* An opaque fill, not a backdrop blur. A sticky blurred bar re-samples and
+     re-blurs everything scrolling behind it every frame, a classic mobile
+     scroll-jank source. A solid fill covers the rows underneath for free. */
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 @media (min-width: 560px) {
@@ -806,8 +807,10 @@ details.band[open] > summary.band-head::after {
    @property inside the mask/gradient calc() — desktop Chrome repaints that per
    frame, but mobile does not, so the flames never rendered and the row just blinked
    out. Keep the motion on mask-position/transform; don't move it back into a
-   custom-property calc(). The SVG turbulence filter (#ember-fire) only adds flicker;
-   if a browser ignores it the bands still read as fire. Reduced-motion users never
+   custom-property calc(). The SVG turbulence filter (#ember-fire) is now static —
+   baked once to give a torn edge, never re-run per frame; the flicker is an opacity
+   shimmer plus a small transform bob on the bands, both compositor-only. If a browser
+   ignores the filter the bands still read as fire. Reduced-motion users never
    get the .igniting class, so they just see it vanish. The brand is Ember; finishing
    something should feel like it burns. */
 [data-burnable] {
@@ -851,8 +854,9 @@ details.band[open] > summary.band-head::after {
   );
   filter: url(#ember-fire);
   z-index: 3;
-  will-change: transform;
-  animation: ember-flames 1.2s linear forwards;
+  will-change: transform, opacity;
+  animation: ember-flames 1.2s linear forwards,
+    ember-flicker 0.26s ease-in-out infinite;
 }
 /* Front flame: a hot wall riding the leading (right) edge of the band, so the
    white-yellow tip stays at the burn line as it crosses the card. */
@@ -874,8 +878,9 @@ details.band[open] > summary.band-head::after {
   );
   filter: url(#ember-fire);
   z-index: 4;
-  will-change: transform;
-  animation: ember-flames 1.2s linear forwards;
+  will-change: transform, opacity;
+  animation: ember-flames 1.2s linear forwards,
+    ember-flicker 0.19s ease-in-out infinite;
 }
 @keyframes ember-sweep {
   from {
@@ -887,12 +892,36 @@ details.band[open] > summary.band-head::after {
     mask-position: -40% 0;
   }
 }
+/* The sweep across the card (translateX, even 100% steps so the horizontal pace
+   stays linear) with a gentle vertical bob layered in, so the flame bobs as it
+   crosses instead of sliding flat. One transform property, pure compositor. */
 @keyframes ember-flames {
-  from {
-    transform: translateX(-115%);
+  0% {
+    transform: translateX(-115%) translateY(0);
   }
-  to {
-    transform: translateX(285%);
+  25% {
+    transform: translateX(-15%) translateY(-3px);
+  }
+  50% {
+    transform: translateX(85%) translateY(2px);
+  }
+  75% {
+    transform: translateX(185%) translateY(-2px);
+  }
+  100% {
+    transform: translateX(285%) translateY(0);
+  }
+}
+/* Flicker: a fast, shallow opacity shimmer so the fire looks alive. Compositor-only,
+   so it's free per frame. The two bands run it at different rates (0.19s / 0.26s) so
+   they pulse out of sync. */
+@keyframes ember-flicker {
+  0%,
+  100% {
+    opacity: 0.82;
+  }
+  50% {
+    opacity: 1;
   }
 }
 @keyframes ember-fall {
@@ -906,6 +935,14 @@ details.band[open] > summary.band-head::after {
     transform: translateY(-6px) scale(0.97);
   }
 }
+/* The spent card, taken out of layout the instant the burn ends. A collapsed
+   (max-height:0) flex row still holds its surrounding gap open, so without this the
+   leftover gap lingered until the server re-render unmounted the node — the lag felt
+   "when it disappears". Hiding it here closes the gap on the client, decoupled from
+   the round trip. markDone still unmounts the node behind the scenes. */
+.burned {
+  display: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .igniting {
     animation: none;
@@ -915,5 +952,55 @@ details.band[open] > summary.band-head::after {
   .igniting::before,
   .igniting::after {
     display: none;
+  }
+}
+
+/* Loading skeletons (app/loading.tsx). Calm, low-contrast blocks with a soft
+   opacity pulse (compositor-only), sized to the real chrome so swapping in the
+   live board doesn't jump. */
+.skel {
+  display: block;
+  background: var(--panel-2);
+  border-radius: 10px;
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.skel-chip {
+  justify-self: center;
+  width: 118px;
+  height: 32px;
+  border-radius: 999px;
+}
+.skel-add {
+  justify-self: end;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+.skel-filter {
+  height: 32px;
+  border-radius: 999px;
+}
+.skel-hero {
+  height: 98px;
+  border-radius: 16px;
+  margin-bottom: 22px;
+}
+.skel-band {
+  height: 62px;
+  border-radius: 14px;
+  margin-bottom: 14px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
   }
 }
