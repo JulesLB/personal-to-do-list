@@ -66,8 +66,10 @@ sweep), a **`deferCount`** (bumped every time you actively push an item away —
 its deadline to a later date; `deferWarning` shows "Pushed N times" on the board and nudge once it
 hits 2, and a completed cycle resets it), plus an append-only **`Event`** table (`itemId`, `kind` =
 `nudged|snoozed|promised|done|...`, `slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table whose
-only live key is `ownerChatId` — the single user's Telegram chat, auto-learned from their first
-message so the cron knows where to nudge.
+only live key is `ownerChatId` — the single user's Telegram chat. It's set **trust-on-first-use**
+(the first chat to message the bot, or `OWNER_CHAT_ID` if set) and then **never overwritten**: the
+webhook rejects any other chat, so a stranger who finds the bot can't read the list or hijack where
+the cron nudges.
 
 Completing a **commitment** does not close it: it sets `lastDoneAt = now`, clears `lastNudgedAt` /
 `promisedAt`, bumps `cycleStreak`, and leaves `status = open` so it resurfaces one cadence later.
@@ -120,7 +122,10 @@ transcribed by `transcribeVoice` ([src/lib/voice.ts](src/lib/voice.ts)) via Open
 (`whisper-1`, the only non-Anthropic model call, keyed by `OPENAI_API_KEY`), the transcript is echoed
 back (`🎙️ Heard: "…"`) so a bad transcription is visible, then fed into the exact same `interpret`
 path — so every create/update/snooze flow works by voice with no downstream change.
-Auth is the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET`. Always returns
+Auth is two layers: the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET` proves
+the request came from Telegram, then `ensureOwner` locks the bot to the owner chat (see `Setting`
+above) — the secret alone doesn't prove *which* user sent the message, so without the owner check any
+Telegram user who found the bot would be trusted. A non-owner chat is dropped silently. Always returns
 200 (even on internal error) so Telegram doesn't retry.
 
 **Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
@@ -140,7 +145,9 @@ message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` p
 `preview-nudge.ts` relies on.
 
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
-`Bearer ${CRON_SECRET}`, reads `?slot=evening` (defaults to morning). Two jobs in
+`Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
+the response omits `chatId` so an unauthenticated probe leaks nothing. Reads `?slot=evening` (defaults
+to morning). Two jobs in
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
 Two once-daily jobs fit the Vercel Hobby limit.
 
@@ -184,9 +191,13 @@ There is no promote button and no parking type option: giving an item a **deadli
 derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
 it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
-[src/middleware.ts](src/middleware.ts), which checks an `app_auth` cookie against `APP_SECRET`;
-`/login`, `/api`, and assets are left open. `/api/login` sets the cookie. Styling is a light,
-card-based theme in [src/app/globals.css](src/app/globals.css).
+[src/middleware.ts](src/middleware.ts): the `app_auth` cookie is **not** the password — it holds a
+signed, 30-day-expiring HMAC token ([src/lib/auth.ts](src/lib/auth.ts), Web Crypto so it runs on the
+Edge), which the middleware verifies in constant time. `/api/login` checks the typed key against
+`APP_SECRET` (constant-time) and issues the token in a `secure` cookie; rotating `APP_SECRET`
+invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
+a file extension open (the last so static assets like `/logo.png` aren't redirected to `/login`).
+Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css).
 
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
 the action→reward loop. The Done control on the hero and every row is `BurnButton`, a client island:

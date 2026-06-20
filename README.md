@@ -42,7 +42,9 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 6. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
 7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars (Vercel → Settings → Environment Variables) plus `APP_URL`. Include `DIRECT_URL` (session pooler, port 5432) — Vercel's build runs `vercel-build` (`prisma migrate deploy && prisma generate && next build`), so pending migrations apply to the prod DB on every deploy. Crons are declared in `vercel.json`: 01:00 UTC (09:00 HKT, morning) and 13:00 UTC (21:00 HKT, evening). Two once-daily jobs fit the Vercel Hobby limit.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
-9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
+9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`. The
+   bot locks to the first chat that messages it (or set `OWNER_CHAT_ID` to pin it) and ignores every
+   other chat, so a stranger who finds the bot can't read or change your list.
 
 The Telegram webhook needs a public URL, so the bot goes live once deployed (or via an ngrok
 tunnel for local testing). The board runs locally on its own.
