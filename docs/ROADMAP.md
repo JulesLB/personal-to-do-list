@@ -28,7 +28,7 @@ Status values: `TODO` · `IN PROGRESS` · `DONE` · `PARKED`.
 | M0b | Collapse the defer warning to one state | Remove | S | P2 | DONE |
 | M2 | Close the referee loop *(the moat)* | Improve | L | **P0** | BUILT · awaiting Meta setup |
 | M3 | Weekly receipts → Review page | Add | M | P1 | IN PROGRESS · Review page (triage + bonfire) shipped, Sunday digest pending |
-| M5 | First-run activation | Improve | M | P1 | TODO |
+| M5 | First-run activation | Improve | M | P1 | DONE · referee + email capture parked |
 | M6 | Commit templates | Add | S | P2 | TODO |
 | M8 | Deadline-aware nudge timing | Improve | M | P2 | TODO |
 
@@ -254,7 +254,24 @@ data is already being written.
 
 ## M5 · First-run activation
 
-**Decision: Improve · Effort: M · Priority: P1 · Status: TODO · Maps to PRD-12**
+**Decision: Improve · Effort: M · Priority: P1 · Status: DONE (referee + email capture parked) · Maps to PRD-12**
+
+**Shipped (value-first, referee parked).** Reordered from the literal DoD: capture is the activation
+event, not a referee-attached item, so a fresh chat feels the product work before being asked to set
+anything up. `User.onboardingStep` (`new` → `done`, default `done` so existing users skip the flow)
+threads the state. Telegram: a new chat gets a warm one-ask `/start` (greets by name), the command
+wall moved behind `/help`, and the first captured item fires a one-time orientation then closes
+onboarding; returning users get a short pointer. The first name is harvested silently from the Telegram
+payload (`extractName` in [src/lib/onboarding.ts](src/lib/onboarding.ts)) so the classifier personalizes
+with no question asked. Board: the dead empty-state line is replaced by a first-run screen (welcome,
+one-line explainer, a primary "+ Add your first task" CTA, a pointer to the bot) that self-collapses
+once an item lands. Pure logic + copy live in [src/lib/onboarding.ts](src/lib/onboarding.ts), unit-tested
+in [tests/onboarding.test.ts](tests/onboarding.test.ts). Also tightened the bot's intent-driven
+retire/snooze/update to the `{ id, userId }` filter (defense-in-depth on cross-user writes).
+
+**Parked, with a clean socket.** The guided referee beat slots between first-capture and `done` as one
+more `onboardingStep` value (waiting on the Meta WhatsApp setup, M2). Email capture sits next to it
+(the `User.email` column already exists), to land when billing or account recovery needs it.
 
 **Why.** `/start` in [src/app/api/telegram/route.ts](src/app/api/telegram/route.ts) returns one dense
 paragraph of commands. The mental model (type is derived, the death zone, referees) is never taught; it is

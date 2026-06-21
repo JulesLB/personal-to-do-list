@@ -8,19 +8,25 @@ import { createItem } from "./actions";
 // and the same levers as the edit panel: title, category, referee, deadline, and
 // repeats. Type and importance aren't here on purpose — type is derived from
 // deadline+repeats, importance defaults to true server-side.
-export function AddItem() {
+export function AddItem({ variant = "icon" }: { variant?: "icon" | "cta" }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        className="add-btn"
-        onClick={() => setOpen(true)}
-        title="New item"
-        aria-label="New item"
-      >
-        +
-      </button>
+      {variant === "cta" ? (
+        <button type="button" className="add-cta" onClick={() => setOpen(true)}>
+          + Add your first task
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="add-btn"
+          onClick={() => setOpen(true)}
+          title="New item"
+          aria-label="New item"
+        >
+          +
+        </button>
+      )}
       {open ? <AddPanel onClose={() => setOpen(false)} /> : null}
     </>
   );

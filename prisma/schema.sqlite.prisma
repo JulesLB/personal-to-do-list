@@ -18,6 +18,7 @@ model User {
   name           String?
   email          String?
   timezone       String    @default("Asia/Hong_Kong")
+  onboardingStep String   @default("done") // M5: "new" until first capture, then "done"
   createdAt      DateTime  @default(now())
   items          Item[]
   referees       Referee[]
