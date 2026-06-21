@@ -27,7 +27,7 @@ Status values: `TODO` · `IN PROGRESS` · `DONE` · `PARKED`.
 | M0a | Remove the empty-state morning ping | Remove | S | P1 | DONE |
 | M0b | Collapse the defer warning to one state | Remove | S | P2 | DONE |
 | M2 | Close the referee loop *(the moat)* | Improve | L | **P0** | BUILT · awaiting Meta setup |
-| M3 | Weekly receipts | Add | M | P1 | TODO |
+| M3 | Weekly receipts → Review page | Add | M | P1 | IN PROGRESS · Review page (triage + bonfire) shipped, Sunday digest pending |
 | M5 | First-run activation | Improve | M | P1 | TODO |
 | M6 | Commit templates | Add | S | P2 | TODO |
 | M8 | Deadline-aware nudge timing | Improve | M | P2 | TODO |
@@ -206,7 +206,25 @@ Split into two shippable halves.
 
 ## M3 · Weekly receipts
 
-**Decision: Add · Effort: M · Priority: P1 · Status: TODO · Maps to PRD-8, PRD-9**
+**Decision: Add · Effort: M · Priority: P1 · Status: IN PROGRESS (board panel shipped; Sunday digest pending) · Maps to PRD-8, PRD-9**
+
+**Shipped (Review page — Command Center).** Reframed from a board panel into its own `/review` route,
+because a reflective/triage surface is different functionality from the action board. Two altitudes:
+- **The mirror strip** — pure [src/lib/receipts.ts](src/lib/receipts.ts) (`weeklyReceipts`: cleared /
+  pushed / kept-promise rate / streak, this week vs the 7 before, all HKT). 6 tests.
+- **The triage** — pure [src/lib/triage.ts](src/lib/triage.ts) buckets the slipping items, hottest
+  first: **already escalated** (referee was told this cycle) → **about to escalate** → **broken
+  promises** → **keep dodging** (deferCount ≥ 2) → **death zone** (important + undated). Each item lands
+  in its single most severe bucket; each row is one-tap actionable (burn-to-ash Done, Tell-referee
+  wa.me link, tap-body to date/drop via the edit panel). 6 tests.
+- **The bonfire** ([src/app/review/Bonfire.tsx](src/app/review/Bonfire.tsx)) — a reactive fire whose
+  intensity = summed bucket heat; clearing a row cools it live (BurnButton `onDone`), clearing all
+  drops it to a calm "All clear" ember state. Compositor-only motion (transform/opacity), same rule as
+  the burn-to-ash.
+
+Entry: the board's streak chip links to `/review`; a Board | Review toggle returns. The board no longer
+carries the receipts panel. **Still pending:** the Sunday Telegram digest folded into the evening sweep
+(deferred to a follow-up).
 
 **Why.** The append-only `Event` table already records `done`, `nudged`, `snoozed`, `promised`. Nothing
 reads it back to the user. A nag earns resentment; receipts earn loyalty. The weekly review is the habit
@@ -224,10 +242,10 @@ data is already being written.
 
 **Definition of done.**
 - [ ] Sunday evening (HKT) produces a digest: completed, dropped, longest streak, most-pushed item,
-      kept-promise rate.
-- [ ] A board panel shows the same numbers, this week vs last.
-- [ ] The aggregation module has unit tests that reconcile against seed data.
-- [ ] No new cron job was added.
+      kept-promise rate. *(deferred — Sunday branch in the evening sweep)*
+- [x] A board panel shows the same numbers, this week vs last.
+- [x] The aggregation module has unit tests that reconcile against seed data.
+- [x] No new cron job was added.
 
 **Touches.** [src/lib/sweep.ts](src/lib/sweep.ts) (Sunday branch), a new analytics module,
 [src/app/page.tsx](src/app/page.tsx) (panel), tests.

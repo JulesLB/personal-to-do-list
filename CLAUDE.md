@@ -8,7 +8,8 @@ Ember (formerly Hermes) — a single-user accountability engine. You text a Tele
 Claude classifies it into a structured item; a pressure score ranks everything; two daily Vercel
 crons (a morning nudge and an evening honesty check) push the most pressing task; ignoring it long
 enough surfaces a pre-drafted WhatsApp message to a "referee" (wife/sister/colleague). A
-password-gated web board shows the same ranked list. The bet: capture was never the problem,
+password-gated web board shows the same ranked list, and a `/review` page reads your week back to
+you (a scoreboard of what's slipping plus an AI coach). The bet: capture was never the problem,
 follow-through was — so the code invests in ranking, nagging, and escalation, not storage.
 
 All day/deadline math runs in **HKT (UTC+8, fixed offset, no DST)** so "due today" never drifts on
@@ -29,8 +30,8 @@ npm run set-webhook     # point the Telegram bot at APP_URL/api/telegram
 npx tsx scripts/preview-nudge.ts [evening]   # print the morning (or evening) nudge without sending
 ```
 
-`npm test` (Vitest) covers the pure logic in `rank.ts` and `nudge.ts`; tests live in `tests/` and
-run against a fixed clock, no DB. There is no linter. `npm run build` (which runs `prisma generate`)
+`npm test` (Vitest) covers the pure logic (`rank`, `nudge`, `triage`, `receipts`, `escalate`,
+`snooze`, the referee token); tests live in `tests/` and run against a fixed clock, no DB. There is no linter. `npm run build` (which runs `prisma generate`)
 is the type-check / sanity gate. Run both before committing.
 
 ## Database migrations
@@ -186,16 +187,17 @@ several per interaction) — that was the main source of board lag.
 
 **Web board** ([src/app/page.tsx](src/app/page.tsx)) — a server component and a real control surface;
 mutations go through server actions in [src/app/actions.ts](src/app/actions.ts) (`markDone`, `retire`,
-`remove`, `updateItem`, `snoozeItem`, `createItem`). Layout top to bottom: a **top bar** — a
-`1fr/auto/1fr` grid with the Ember logo left, the **streak chip** dead-center, and a circular **"+"
-add button** right ([src/app/AddItem.tsx](src/app/AddItem.tsx), matched to the chip's 32px height).
-The board is a second create surface alongside Telegram: "+" opens a modal with the same levers as the
-edit panel (title, category, referee, deadline, repeats) and calls `createItem`, which mirrors the
-Telegram create path — `deriveType` from deadline+cadence, `important` defaults true. Then a
-**sticky** filter bar of the six
-categories as **equal-width chips** (a colored dot, the label, the open count; opaque fill, not a
-backdrop blur, so scrolling the list under it doesn't re-blur every frame), then the burning
-**hero** (`#1`) on its own card, then the rest as **separate, neutral band cards** — "On fire"
+`remove`, `updateItem`, `createItem`). Layout top to bottom: a **top bar** — a
+`1fr/auto/1fr` grid with the Ember logo left, the **streak chip** (a flame emoji + day count)
+dead-center, and on the right a single **Review** nav button next to a circular **"+" add button**
+([src/app/AddItem.tsx](src/app/AddItem.tsx), matched to the chip's 32px height). The "+" and Review
+buttons are neutral grey, so the only warm chrome is the streak; red is reserved for urgency in the
+content. The board is a second create surface alongside Telegram: "+" opens a modal with the same
+levers as the edit panel (title, category, referee, deadline, repeats) and calls `createItem`, which
+mirrors the Telegram create path — `deriveType` from deadline+cadence, `important` defaults true.
+There is **no category filter** (category is just a quiet dot per row); the board goes straight from
+the top bar to the burning **hero** (`#1`) on its own card, then the rest as **separate, neutral band
+cards** — "On fire"
 (always shown) / "Heating up" (open by default) / "Back burner" (collapsed) / "Parking
 lot" (collapsed), the collapsible ones a `<details>` with its count. The visual system is **one
 color, one job**: category is a quiet colored dot, the single loud color is urgency via `dueTone`
@@ -206,23 +208,22 @@ label carries the urgency tint). The hero is the exception: it fills red when bu
 amber/faint left edge by `heatOf` otherwise. Every band (hero, "On fire", and the calm
 "Heating up" / "Back burner") uses the one `compareActionable` order — soonest due date first,
 importance breaking ties on the same day; `sortByDate` is just that comparator applied to a band. Parking
-rows show their age via `parkingAgeLabel` ("added 12d ago") and, once `isStaleParking` trips at 14
-days, a blunt "Decide: date it or drop it" flag. Clicking a chip sets `?cat=<key>` and
-filters the hero + bands; the chip counts stay global; clicking the active chip clears the filter
-(there is no logo/reset control). The page reads the filter from the awaited `searchParams` (Next 15
-async). Category renders as a colored dot + grey label; task deadlines render via `dueInLabel` ("due
+rows show their age via `parkingAgeLabel` ("added 12d ago") and, once `isStaleParking` trips at **7
+days**, a blunt "Decide: date it or drop it" flag. Category renders as a colored dot + grey label; task deadlines render via `dueInLabel` ("due
 in 10 days", in days even past a week) and commitments show their computed due date the same way
 (`dueInLabel(commitmentDue(...))`). Repeated dodges surface as one steady amber ⚠ via `deferState`
 (shown from the first push, same style at any count; the exact tally lives in the tooltip — the
-old orange/red/pulsing tiers were collapsed to one marker). **Tap a row or the hero body to edit** — the edit panel
+old orange/red/pulsing tiers were collapsed to one marker), placed inline at the end of the title
+row so the meta line below stays short. **Tap a row or the hero body to edit** — the edit panel
 ([src/app/EditTrigger.tsx](src/app/EditTrigger.tsx), a client component) opens on the body click, so
 there is no edit button. The panel exposes only the levers you actually control — title, category,
 referee, deadline, and a **"Repeats"** select (none / daily / weekly / monthly = the cadence). Type
 and `important` are deliberately absent: type is derived from deadline+repeats and `important` is
 brain-owned, so neither is clickable. The destructive action sits behind a tap-to-confirm (delete
-when there's no cadence, retire for a commitment). Rows otherwise show only the done tick; the
-**snooze-preset menu** ([src/app/SnoozeMenu.tsx](src/app/SnoozeMenu.tsx)) lives on the hero alone.
-There is no promote button and no parking type option: giving an item a **deadline** in the panel
+when there's no cadence, retire for a commitment). Rows and the hero otherwise show only the done
+tick; quick-snooze was removed from the board, so deferring happens through Telegram (the nudge's
+snooze presets) or by editing the date. There is no promote button and no parking type option:
+giving an item a **deadline** in the panel
 derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
 it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
@@ -233,7 +234,7 @@ Edge), which the middleware verifies in constant time. `/api/login` checks the t
 invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
 a file extension open (the last so static assets like `/logo.png` aren't redirected to `/login`).
 Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css). A calm skeleton
-([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. tapping a filter) during the
+([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. opening Review) during the
 dynamic re-render, which shows mainly on a cold serverless start.
 
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
@@ -274,6 +275,35 @@ so it can only add. Reads the append-only `done` Events and every item's due dat
 the full table (not just open) for it — one batched `prisma.$transaction([items, doneEvents])`, with
 the open list derived from `allItems` in memory instead of a separate query. No DB column — it's derived
 each render.
+
+**Review page** ([src/app/review/page.tsx](src/app/review/page.tsx)) — the second surface, reached by
+the board's **Review** button (the Review page has a **Tasks** button back). It reads your week back
+instead of listing what to do, and leans on three pure modules:
+
+- **Triage** ([src/lib/triage.ts](src/lib/triage.ts)) — `triage(items, events, now)` drops each open
+  item into the single most severe **slipping** bucket it qualifies for, hottest first: `escalated` (a
+  `told_referee` Event landed this cycle, so a real consequence is live), `dodging` (`deferCount ≥ 1`),
+  `death_zone` (parked past the stale threshold, `isStaleParking` = 7 days). One bucket per item; the
+  coach reads the same list.
+- **Receipts** ([src/lib/receipts.ts](src/lib/receipts.ts)) — `weeklyReceipts` returns the pure weekly
+  numbers (cleared / pushed this week vs last, plus the streak) over the `Event` log, trailing 7 HKT days.
+- **Coach** ([src/lib/coach.ts](src/lib/coach.ts) + [src/lib/reviewAnalysis.ts](src/lib/reviewAnalysis.ts))
+  — "Your read", the headline value: one Haiku call grounded in the real slipping items + week, returning
+  three beats — `pattern` (the habit, item by title), `soWhat` (what to change), `doThis` (one move, one
+  sentence). The prompt is held to the anti-AI voice spec (no banned words, no negative-parallelism
+  reframes). Cached in `Setting` key `reviewAnalysis`; **regenerated only via the Refresh button** (server
+  action `refreshAnalysis`), so a page load never silently pays for a model call. Degrades to no card on
+  API failure; an old-shape cache regenerates.
+
+The page renders, top to bottom ([src/app/review/ReviewClient.tsx](src/app/review/ReviewClient.tsx)): a
+**scoreboard** of count boxes — 🚨 escalated, ⏰ overdue (a flat count of open items past due, cutting
+across buckets), 🔁 keep dodging, 💀 death zone, ✅ cleared this week, 🔥 day streak; a box is calm grey
+at zero and only lights up with a count (escalated fills red, the two good boxes go green / gold). Then
+the coach card (three beats, the "Do this" one edged red). Then the detail list of slipping items
+(escalated / dodging / death zone), each row with a **Tell {referee}** `wa.me` link (escalated only) and
+a `BurnButton`; burning a row drops it client-side at once via the `onDone` callback, so its scoreboard
+box ticks down in the same beat. Death-zone rows carry the board's red "Decide: date it or drop it" flag.
+Mutations on either page revalidate both `/` and `/review`.
 
 ## Conventions
 
