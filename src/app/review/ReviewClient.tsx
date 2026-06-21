@@ -102,15 +102,33 @@ function Coach({ analysis }: { analysis: CoachAnalysis }) {
   );
 }
 
+// Before the coach has earned a real read (cold start), the card shows honest
+// encouragement instead of a fabricated pattern. No refresh, no model behind it.
+function Warming({ title, body }: { title: string; body: string }) {
+  return (
+    <section className="coach coach-warming">
+      <header className="coach-head">
+        <span className="coach-title">🧠 Your read</span>
+      </header>
+      <div className="coach-beat">
+        <div className="coach-sub">{title}</div>
+        <p className="coach-text">{body}</p>
+      </div>
+    </section>
+  );
+}
+
 export function ReviewClient({
   entries,
   receipts,
   analysis,
+  warming,
   overdue,
 }: {
   entries: ReviewEntry[];
   receipts: Receipts;
   analysis: CoachAnalysis | null;
+  warming: { title: string; body: string } | null;
   overdue: number;
 }) {
   // Acting on a row drops it here at once, so its scoreboard box ticks down in the
@@ -144,7 +162,7 @@ export function ReviewClient({
         <Box ico="🔥" num={receipts.streak} label="Day streak" cls="streak" />
       </section>
 
-      {analysis ? <Coach analysis={analysis} /> : null}
+      {analysis ? <Coach analysis={analysis} /> : warming ? <Warming {...warming} /> : null}
 
       {visible.length === 0 ? (
         <section className="all-clear">

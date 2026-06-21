@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:local": "node scripts/dev-local.mjs",
+    "dev:local:empty": "node scripts/dev-local.mjs --empty",
     "try": "node scripts/try.mjs",
     "check:isolation": "node scripts/check-isolation.mjs",
     "build": "prisma generate && next build",

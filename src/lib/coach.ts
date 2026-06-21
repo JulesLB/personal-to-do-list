@@ -15,6 +15,42 @@ export type CoachAnalysis = {
   generatedAt: string; // ISO
 };
 
+// Cold-start gate. A coach that claims to read your habits on day 1 is obviously
+// faking, and that's exactly when trust is lost. So the personalized read stays
+// off until there's real behavior to read: about 5 outcomes (deadlines cleared or
+// currently missed) or a week of history, whichever comes first. Below the gate
+// the page shows generic encouragement and skips the model call entirely.
+export const COACH_MIN_OUTCOMES = 5;
+export const COACH_MIN_DAYS = 7;
+
+export function coachReady(
+  items: Item[],
+  events: { kind: string }[],
+  now: Date
+): boolean {
+  if (!items.length) return false;
+  const cleared = events.filter((e) => e.kind === "done").length;
+  const missed = items.filter((i) => i.status === "open" && daysOverdue(i, now) > 0).length;
+  const earliest = Math.min(...items.map((i) => i.createdAt.getTime()));
+  const daysActive = Math.floor((now.getTime() - earliest) / 86400000);
+  return cleared + missed >= COACH_MIN_OUTCOMES || daysActive >= COACH_MIN_DAYS;
+}
+
+// What the Review card says before the coach has earned the right to read you.
+// Warm and honest, not a fake insight: acknowledge any early wins, say what's
+// coming. Lightly adaptive on the week's clears and the streak.
+export function warmingMessage(
+  clearedThisWeek: number,
+  streak: number
+): { title: string; body: string } {
+  const title = streak > 1 ? `🔥 ${streak}-day start` : "🌱 Getting started";
+  const opener = clearedThisWeek > 0 ? `${clearedThisWeek} cleared so far, good. ` : "";
+  return {
+    title,
+    body: `${opener}Keep capturing what you keep putting off and clearing what's due. Once I've watched about a week of your habits, I'll start naming your patterns and the one thing to fix.`,
+  };
+}
+
 // Pure: turn the live state into the user message the model reasons over. Grounds
 // every number so the read references real items and counts, not vibes. Exported
 // so the prompt can be inspected/tested without an API call.

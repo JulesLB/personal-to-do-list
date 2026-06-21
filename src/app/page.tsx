@@ -1,10 +1,10 @@
 import type { Item } from "@prisma/client";
-import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
+import { ReviewHint } from "./ReviewHint";
 import { currentStreak } from "@/lib/streak";
 import { currentUser } from "@/lib/session";
 
@@ -34,6 +34,10 @@ function Cat({ c }: { c: string | null }) {
 }
 
 export default async function Board() {
+  // Optional deep link to the bot, shown on the first-run screen so a new user
+  // can jump straight into the chat (the primary capture surface). Unset = the
+  // step still reads, just without the button.
+  const botUrl = process.env.TELEGRAM_BOT_URL;
   const now = new Date();
   // One batched round trip for the whole render. The streak needs the full table
   // (done/retired rows too: a fire that was due and cleared), so we fetch every
@@ -220,9 +224,7 @@ export default async function Board() {
           </span>
         </span>
         <div className="topbar-right">
-          <Link href="/review" className="nav-btn">
-            Review
-          </Link>
+          <ReviewHint enabled={allItems.length > 0} />
           <AddItem />
         </div>
       </header>
@@ -262,14 +264,51 @@ export default async function Board() {
             {me?.name ? `Welcome, ${me.name}.` : "Welcome to Ember."}
           </h1>
           <p className="firstrun-lede">
-            This is your board: the things you keep putting off, ranked by what is most pressing.
-            Add one and Ember nudges you until it is done.
+            Ember turns the things you keep putting off into a list that nags you until they are done.
+            Here is how it works.
           </p>
-          <AddItem variant="cta" />
-          <p className="firstrun-hint">
-            Or just text the bot, it is faster. Ember pings you morning and night only when something
-            is actually due, and stays quiet otherwise.
-          </p>
+          <ol className="firstrun-steps">
+            <li className="fr-step">
+              <span className="fr-num">1</span>
+              <div className="fr-body">
+                <div className="fr-h">Text the bot, even messy</div>
+                <p className="fr-p">
+                  Send it like you would text a friend: &quot;call the dentist sometime next week,
+                  important&quot;. Ember reads the mess and turns it into a dated, sorted task. Voice
+                  notes work too.
+                </p>
+                {botUrl ? (
+                  <a className="fr-link" href={botUrl} target="_blank" rel="noopener noreferrer">
+                    Open Ember in Telegram →
+                  </a>
+                ) : null}
+              </div>
+            </li>
+            <li className="fr-step">
+              <span className="fr-num">2</span>
+              <div className="fr-body">
+                <div className="fr-h">Get nudged when it matters</div>
+                <p className="fr-p">
+                  Morning and night, Ember pings you only when something is actually due, and stays
+                  quiet otherwise.
+                </p>
+              </div>
+            </li>
+            <li className="fr-step">
+              <span className="fr-num">3</span>
+              <div className="fr-body">
+                <div className="fr-h">Review reads your week back</div>
+                <p className="fr-p">
+                  The Review button up top shows what you cleared, what is slipping, and a coach once
+                  it has learned your habits.
+                </p>
+              </div>
+            </li>
+          </ol>
+          <div className="firstrun-or">
+            <AddItem variant="cta" />
+            <span className="fr-or-note">Prefer to type it here? Add your first task.</span>
+          </div>
         </section>
       ) : (
         <section className="empty-state">

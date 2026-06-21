@@ -37,31 +37,44 @@ const items = [
   { title: "Pick the next restaurant with my wife", type: "parking", category: "personal", important: false },
 ];
 
+// SEED_EMPTY=1 seeds a brand-new user with no items, so the board renders its
+// first-run onboarding screen (which shows only at zero items). Used by
+// `npm run dev:local:empty` to eyeball the new-user board.
+const empty = process.env.SEED_EMPTY === "1";
+
 // Reset and seed a single owner; deleting the user cascades items/referees/events.
 await prisma.user.deleteMany();
 const user = await prisma.user.create({
   data: {
     telegramChatId: "seed-owner",
     name: "Jules",
-    referees: { create: [{ label: "wife" }, { label: "sister" }, { label: "colleague" }] },
+    // A true new user: still in onboarding, no referees configured yet.
+    ...(empty
+      ? { onboardingStep: "new" }
+      : { referees: { create: [{ label: "wife" }, { label: "sister" }, { label: "colleague" }] } }),
   },
 });
 
-const created = [];
-for (const it of items) created.push(await prisma.item.create({ data: { ...it, userId: user.id } }));
+if (empty) {
+  console.log("Seeded an empty new user (board first-run). Log in to see the welcome screen.");
+  await prisma.$disconnect();
+} else {
+  const created = [];
+  for (const it of items) created.push(await prisma.item.create({ data: { ...it, userId: user.id } }));
 
-// Completion history so the streak chip shows in the sandbox. A "done" Event on
-// each of the last 3 days = a 3-day streak (today is still open, so clearing
-// something now bumps it to 4 and the loop is visible end to end).
-const doneAt = (days) => {
-  const d = new Date(Date.now() - days * day);
-  d.setHours(20, 0, 0, 0);
-  return d;
-};
-const anchorId = created[0].id;
-for (const k of [1, 2, 3]) {
-  await prisma.event.create({ data: { itemId: anchorId, kind: "done", createdAt: doneAt(k) } });
+  // Completion history so the streak chip shows in the sandbox. A "done" Event on
+  // each of the last 3 days = a 3-day streak (today is still open, so clearing
+  // something now bumps it to 4 and the loop is visible end to end).
+  const doneAt = (days) => {
+    const d = new Date(Date.now() - days * day);
+    d.setHours(20, 0, 0, 0);
+    return d;
+  };
+  const anchorId = created[0].id;
+  for (const k of [1, 2, 3]) {
+    await prisma.event.create({ data: { itemId: anchorId, kind: "done", createdAt: doneAt(k) } });
+  }
+
+  console.log(`Seeded ${items.length} items + 3 days of streak history.`);
+  await prisma.$disconnect();
 }
-
-console.log(`Seeded ${items.length} items + 3 days of streak history.`);
-await prisma.$disconnect();

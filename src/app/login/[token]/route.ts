@@ -14,11 +14,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   const { token } = await ctx.params;
   const secret = process.env.APP_SECRET;
   if (!secret) {
-    return NextResponse.redirect(new URL("/login?error=1", req.url), 303);
+    return NextResponse.redirect(new URL("/get-started?error=1", req.url), 303);
   }
   const userId = await verifyLoginLinkToken(token, secret);
   if (userId === null) {
-    return NextResponse.redirect(new URL("/login?error=1", req.url), 303);
+    return NextResponse.redirect(new URL("/get-started?error=1", req.url), 303);
   }
   const res = NextResponse.redirect(new URL("/", req.url), 303);
   res.cookies.set(SESSION_COOKIE, await createSessionToken(userId, secret), {
