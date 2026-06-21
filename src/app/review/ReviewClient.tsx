@@ -73,11 +73,6 @@ function Coach({ analysis }: { analysis: CoachAnalysis }) {
     <section className="coach">
       <header className="coach-head">
         <span className="coach-title">🧠 Your read</span>
-        <form action={refreshAnalysis}>
-          <button className="coach-refresh" type="submit">
-            ↻ Refresh
-          </button>
-        </form>
       </header>
       <div className="coach-beat">
         <div className="coach-sub">The pattern</div>
@@ -95,7 +90,14 @@ function Coach({ analysis }: { analysis: CoachAnalysis }) {
           <p className="coach-text">{analysis.doThis}</p>
         </div>
       ) : null}
-      <div className="coach-stamp">Updated {relAge(analysis.generatedAt)}</div>
+      <div className="coach-foot">
+        <span className="coach-stamp">Updated {relAge(analysis.generatedAt)}</span>
+        <form action={refreshAnalysis}>
+          <button className="coach-refresh" type="submit">
+            ↻ Refresh
+          </button>
+        </form>
+      </div>
     </section>
   );
 }
@@ -173,6 +175,8 @@ export function ReviewClient({
                         {e.due ? <span className="dl dl-burning">{e.due}</span> : null}
                         {e.bucket === "death_zone" ? (
                           <span className="pushed">Decide: date it or drop it</span>
+                        ) : e.bucket === "dodging" && e.detail ? (
+                          <span className="pushed">{e.detail}</span>
                         ) : e.detail ? (
                           <span className="trow-detail">{e.detail}</span>
                         ) : null}
