@@ -338,6 +338,35 @@ a `BurnButton`; burning a row drops it client-side at once via the `onDone` call
 box ticks down in the same beat. Death-zone rows carry the board's red "Decide: date it or drop it" flag.
 Mutations on either page revalidate both `/` and `/review`.
 
+**Ops console (back-office, shipped 2026-06-21)** — an internal cost/monitoring surface at **`/admin`**,
+gated separately from the board. The foundation is a usage log: every paid external call is wrapped by
+`track()` ([src/lib/usage.ts](src/lib/usage.ts)), which times the call and writes one **`ApiUsage`** row
+(source `classify|coach|transcribe`, provider, model, `userId`, token counts, `audioSeconds`, a
+write-time `costUsd` snapshot, `latencyMs`/`ok`/`errorKind`). Raw tokens are the source of truth;
+`costUsd` is computed from a central rate table in [src/lib/pricing.ts](src/lib/pricing.ts) (Haiku
+$1/$5 per MTok + cache tiers; Whisper per-second) — an unknown model logs $0, the cue to add its rate.
+`track` is **best-effort** (a logging failure never breaks the bot/board/cron) and **skips recording when
+`userId` is null**, which keeps `npm run try` and tests side-effect free. The three call sites wrapped:
+classify ([classify.ts](src/lib/classify.ts), userId via `ClassifyContext`), coach
+([coach.ts](src/lib/coach.ts), userId param), transcribe ([voice.ts](src/lib/voice.ts), userId +
+`durationSeconds` from the Telegram voice note). The dashboard ([src/app/admin/page.tsx](src/app/admin/page.tsx),
+styled with a CSS module) reads `ApiUsage` with live SQL aggregates (no model calls, always current):
+KPI cards (today / this month / all-time cost + token total & cache share, all HKT via
+[src/lib/costs.ts](src/lib/costs.ts)), a per-tool breakdown with cost-per-run, provider + token boxes, and
+a recent-calls table. **`latencyMs`/`ok`/`errorKind` are logged but unsurfaced** — the seed for the
+monitoring panels that come after the cost view.
+
+**Admin auth + brute-force guard** — `/admin` is gated by its own **`ADMIN_SECRET`**, distinct from the
+board's `APP_SECRET`: the board login grants no access. [middleware.ts](src/middleware.ts) routes `/admin`
+(except `/admin/login`) through `verifyAdminToken`; a correct secret at `/api/admin/login` issues a signed
+`admin_auth` cookie (`createAdminToken`/`verifyAdminToken` in [auth.ts](src/lib/auth.ts), domain-separated
+`admin` prefix, 30-day HMAC). Login is throttled by a **DB-backed** limiter
+([src/lib/ratelimit.ts](src/lib/ratelimit.ts)): each attempt writes a **`LoginAttempt`** row (ip, kind,
+success); ≥ 8 failures from an IP in 15 min locks that IP out before the secret is even checked. DB-backed
+because serverless instances don't share memory; **fails open** on a DB error so a hiccup can't lock the
+owner out (the secret is still the gate). The limiter is generic (`kind` = `admin|board`) but only wired to
+admin today.
+
 ## Conventions
 
 - The six categories are defined once in `CATEGORIES` in [src/lib/rank.ts](src/lib/rank.ts), each
@@ -352,3 +381,7 @@ Mutations on either page revalidate both `/` and `/review`.
 - Multi-tenant (Phase 4): every `Item`/`Referee` is scoped by `userId`, and the `User.telegramChatId`
   is the identity. Any new query or mutation must filter by the acting user — `resolveUser` on the bot
   side, `currentUser()` on the board side. Run `npm run check:isolation` after changes that touch data access.
+- Any new paid external call (a new model, provider, or call site) must go through `track()` in
+  [src/lib/usage.ts](src/lib/usage.ts) so it lands on the `/admin` cost log, and its rate must be added to
+  [src/lib/pricing.ts](src/lib/pricing.ts) (an unmissed model silently logs $0). `ADMIN_SECRET` gates
+  `/admin` and is separate from `APP_SECRET` — keep it set in `.env` and Vercel.
