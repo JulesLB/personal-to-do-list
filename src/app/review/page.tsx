@@ -54,7 +54,7 @@ export default async function Review() {
       bucket === "escalated"
         ? `told ${item.referee}`
         : bucket === "dodging"
-          ? `pushed ${item.deferCount}×`
+          ? `Pushed ${item.deferCount} time${item.deferCount === 1 ? "" : "s"}`
           : null;
     const wa = bucket === "escalated" ? waLink(item.referee, refDraft(item)) : null;
     return {

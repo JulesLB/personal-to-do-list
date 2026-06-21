@@ -54,9 +54,9 @@ body {
   align-items: center;
   gap: 8px;
 }
-/* A circle with just a +, matched to the streak chip's height. Neutral grey, same
-   palette as the Review button, so the only loud color in the chrome is the streak;
-   red stays reserved for urgency in the content. */
+/* A circle with just a +, matched to the streak chip's height. Filled white (like
+   the streak chip) so it reads as a real control against the blue-grey page, not a
+   grey shape lost on a grey bar. Red stays reserved for urgency in the content. */
 .add-btn {
   justify-self: end;
   display: inline-flex;
@@ -68,17 +68,16 @@ body {
   font-size: 20px;
   font-weight: 600;
   line-height: 1;
-  color: var(--muted);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--shadow);
 }
 .add-btn:hover {
-  background: var(--panel);
-  border-color: var(--line-strong);
-  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--muted);
 }
 .brand-logo {
   border-radius: 7px;
@@ -336,6 +335,137 @@ details.band[open] > summary.band-head::after {
 }
 .band-ico {
   font-size: 14px;
+  display: inline-block;
+  line-height: 1;
+}
+
+/* Each band's icon gets a small, looping life of its own — a quiet visual cue for
+   the temperature, same spirit as the streak flame. All transform/opacity/filter,
+   so they ride the compositor and never touch the main thread. */
+/* On fire: the siren light pulses on and off, a red glow swelling with it. */
+.band-burning .band-ico {
+  animation: band-siren 1.4s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+@keyframes band-siren {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(0.9) drop-shadow(0 0 0 rgba(229, 72, 77, 0));
+  }
+  50% {
+    transform: scale(1.14);
+    filter: brightness(1.3) drop-shadow(0 0 5px rgba(229, 72, 77, 0.85));
+  }
+}
+/* Heating up: the hourglass runs its sand, then flips — sand down, turn, repeat.
+   Slow on purpose so the turn reads as calm, not frantic. */
+.band-soon .band-ico {
+  animation: band-turn 6s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes band-turn {
+  0%,
+  42% {
+    transform: rotate(0deg);
+  }
+  58%,
+  92% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+/* Back burner: the ice cube melts into a puddle. A pool of water sits at the base
+   and spreads a little, wider then back, while the cube gently settles into it. The
+   puddle is a soft blue ellipse pseudo-element; cube and pool share one 3s clock. */
+.band-later .band-ico {
+  position: relative;
+  animation: band-melt 3s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+@keyframes band-melt {
+  0%,
+  100% {
+    transform: scaleY(1) scaleX(1);
+  }
+  50% {
+    transform: scaleY(0.88) scaleX(1.06);
+  }
+}
+.band-later .band-ico::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 17px;
+  height: 5px;
+  transform: translateX(-50%) scaleX(0.55);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(95, 176, 230, 0.7) 0%,
+    rgba(120, 195, 240, 0.4) 55%,
+    rgba(120, 195, 240, 0) 100%
+  );
+  animation: band-puddle 3s ease-in-out infinite;
+}
+@keyframes band-puddle {
+  0%,
+  100% {
+    transform: translateX(-50%) scaleX(0.5);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateX(-50%) scaleX(1);
+    opacity: 0.95;
+  }
+}
+/* Parking lot: a neon parking sign. It glows steady, then stutters like an old tube
+   coming back on — a creative beat for the band where things go to sit. */
+.band-parking .band-ico {
+  animation: band-neon 4s linear infinite;
+}
+@keyframes band-neon {
+  0%,
+  40%,
+  100% {
+    opacity: 1;
+    filter: brightness(1.12) drop-shadow(0 0 3px rgba(40, 120, 255, 0.6));
+  }
+  42% {
+    opacity: 0.35;
+    filter: brightness(0.7) drop-shadow(0 0 0 rgba(40, 120, 255, 0));
+  }
+  44% {
+    opacity: 1;
+    filter: brightness(1.12) drop-shadow(0 0 4px rgba(40, 120, 255, 0.7));
+  }
+  46% {
+    opacity: 0.5;
+  }
+  48% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  73% {
+    opacity: 0.3;
+  }
+  75% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .band-burning .band-ico,
+  .band-soon .band-ico,
+  .band-later .band-ico,
+  .band-later .band-ico::after,
+  .band-parking .band-ico {
+    animation: none;
+  }
 }
 .band-count {
   margin-left: auto;
@@ -961,15 +1091,15 @@ details.band[open] > summary.band-head::after {
   line-height: 1;
   color: var(--text);
   text-decoration: none;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   box-shadow: var(--shadow);
   white-space: nowrap;
 }
 .nav-btn:hover {
-  background: var(--panel);
-  border-color: var(--line-strong);
+  background: var(--panel-2);
+  border-color: var(--muted);
 }
 
 /* The scoreboard: the overview, one box per slipping signal plus the streak. A box
@@ -1083,18 +1213,21 @@ details.band[open] > summary.band-head::after {
   font-weight: 800;
   color: var(--text);
 }
+/* Small and quiet, sat by the timestamp at the foot. Deliberately understated:
+   the read is meant to last a week, so the button shouldn't invite re-rolling it. */
 .coach-refresh {
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 600;
-  color: var(--muted);
-  background: var(--panel-2);
+  color: var(--faint);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 4px 11px;
+  padding: 2px 8px;
   cursor: pointer;
 }
 .coach-refresh:hover {
-  color: var(--text);
+  color: var(--muted);
+  border-color: var(--line-strong);
 }
 /* Three beats, each a tiny label over a line, separated by a hairline rule and a
    bit of air so they read as distinct steps. The last one ("Do this") gets a warm
@@ -1132,8 +1265,15 @@ details.band[open] > summary.band-head::after {
 .coach-do .coach-text {
   font-weight: 600;
 }
-.coach-stamp {
+/* The foot line: timestamp on the left, the small Refresh on the right. */
+.coach-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 12px;
+}
+.coach-stamp {
   font-size: 11px;
   color: var(--faint);
 }
@@ -1219,6 +1359,7 @@ details.band[open] > summary.band-head::after {
   gap: 8px;
   flex-wrap: wrap;
   margin-top: 3px;
+  font-size: 11px;
 }
 .trow-detail {
   font-size: 11px;
