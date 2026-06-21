@@ -116,10 +116,12 @@ chat that messages the bot becomes a user (abuse hardening is PRD-16). Every rea
 `userId`; id-based mutations use `updateMany`/`deleteMany` filtered by `{ id, userId }` so a guessed id
 can't touch another user's item. The sweep loops all users and sends each their own nudge. The board
 reads the logged-in user via `currentUser()` ([src/lib/session.ts](src/lib/session.ts)); board auth is
-a **Telegram-link login** — the bot's `/board` command mints a one-time `login` token, and
+a **Telegram-link login** — the bot's `/board` command (and the `/start` welcome) now reply with a
+one-tap **"Open your board"** inline button that carries a one-time `login` token, and
 `/login/<token>` swaps it for a session cookie whose token now carries the `userId`
-([src/lib/auth.ts](src/lib/auth.ts), domain-separated from the `login`/`referee` tokens). The shared
-`APP_SECRET` password still works as the owner's fast path (logs in as the first user). Verify isolation
+([src/lib/auth.ts](src/lib/auth.ts), domain-separated from the `login`/`referee` tokens). **There is no
+separate `/login` page anymore** — a logged-out board hit redirects to the public `/get-started` funnel
+(see Public funnel below), which also hosts the `APP_SECRET` owner fast path behind a disclosure. Verify isolation
 anytime with `npm run check:isolation` (real-DB integration check). **Gotcha that bit us:**
 `npm run db:migrate` targets the cloud `DATABASE_URL` in `.env`, so it applies migrations to **prod** —
 deploy the matching code in the same beat or the live bot breaks on the schema it can't satisfy.
@@ -300,11 +302,30 @@ signed, 30-day-expiring HMAC token ([src/lib/auth.ts](src/lib/auth.ts), Web Cryp
 Edge) that **carries the `userId`** (Phase 4); the middleware verifies it in constant time and the
 board scopes to that user via `currentUser()`. Sessions come from either the Telegram-link login
 (`/board` → `/login/<token>`) or the `APP_SECRET` password (`/api/login`, the owner fast path → user 1);
-rotating `APP_SECRET` invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
-a file extension open (the last so static assets like `/logo.png` aren't redirected to `/login`).
+rotating `APP_SECRET` invalidates every outstanding session. The matcher leaves `/login` (now only the
+`/login/<token>` route handler, the page is gone), `/api`, `/referee`, `/landing`, `/get-started`, `_next`,
+and any path with a file extension open (the last so static assets like `/logo.png` aren't redirected). A
+logged-out board hit **redirects to `/get-started`**, not a login page.
 Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css). A calm skeleton
 ([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. opening Review) during the
 dynamic re-render, which shows mainly on a cold serverless start.
+
+**Public funnel (landing + get-started, the only two unauthenticated pages).** `/` is the gated board;
+the marketing surface lives at **`/landing`** ([src/app/Landing.tsx](src/app/Landing.tsx)) and the
+onboarding at **`/get-started`** ([src/app/get-started/page.tsx](src/app/get-started/page.tsx)), both
+public via the middleware matcher. The landing extends the board's tokens + flame gradient (the wordmark
+is gradient text like the admin header): a soft hero wash, an end-to-end **`HeroFlow`** demo
+([src/app/LandingDemo.tsx](src/app/LandingDemo.tsx)) that loops the whole product in one phone — type the
+bot → real echo line → ranked board → overdue/red → referee escalation (delivered/read) → burn-to-ash
+(reusing the board's `.igniting` + `#ember-fire` filter) — then a how-it-works box with three light,
+scroll-revealed (`Reveal`, IntersectionObserver) step cards, a "why vs a notes app" trio with hover
+highlight, and CTAs to `/get-started`. **Telegram is the identity, so there is no web signup and no
+per-user password**: get-started is a 3-step handoff (get Telegram, even via Telegram Web with no install
+/ open the bot + send the first task / send `/board` and tap the link it replies with). The owner
+`APP_SECRET` shortcut sits behind a disclosure there; failed `/api/login` and bad `/login/<token>` both
+redirect to `/get-started?error=1`. The CTA deep-link reads `TELEGRAM_BOT_URL` (falls back to
+telegram.org if unset — set it in Vercel). All landing styles are `.lp-*` / `.gs-*` in globals.css,
+reduced-motion safe; HeroFlow + Reveal are the only client islands.
 
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
 the action→reward loop. The Done control on the hero and every row is `BurnButton`, a client island:

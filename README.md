@@ -22,6 +22,7 @@ So Ember spends almost none of its effort on storage and almost all of it on nag
 - **Recurring commitments that survive completion.** Marking a weekly goal done honors this cycle and resurfaces it one cadence later, instead of vanishing or nagging forever.
 - **A board that uses color for one job.** Category is a quiet dot; the only loud color is urgency. Finishing a task ignites the card and burns it to ash.
 - **A weekly read on your behavior.** A separate Review page scores what's slipping (escalated, overdue, dodged, rotting in parking) and an AI coach turns the week into three lines: the pattern, what to change, the one thing to do next.
+- **A landing page that shows the whole loop.** A public `/landing` runs an end-to-end demo in one phone (text the bot → ranked board → overdue → referee escalation → burn-to-ash), and `/get-started` walks a new user onto Telegram. No signup and no password: the Telegram chat is the login, and the bot replies with a one-tap link to your board.
 
 ## Engineering notes
 
@@ -66,8 +67,8 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 3. Create a free [Supabase](https://supabase.com) project. Under Connect → ORMs → Prisma, copy the two pooler URLs.
 4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, and `CRON_SECRET`.
 5. `npm run db:migrate:deploy` to apply the committed migrations, then `npm run db:seed` for sample items.
-6. `npm run dev`, open http://localhost:3000, enter `APP_SECRET` as the access key.
-7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL`. Vercel's build runs `vercel-build` (`prisma migrate deploy && prisma generate && next build`), so pending migrations apply to prod on every deploy. Crons are declared in `vercel.json`: 01:00 UTC (morning) and 13:00 UTC (evening). Pin the function region to match the Supabase region.
+6. `npm run dev`, open http://localhost:3000. Logged out, the board redirects to `/get-started`; open the "Owner access key" disclosure there and enter `APP_SECRET` (or use the bot's `/board` link once it's running). The public landing is at `/landing`.
+7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL` and `TELEGRAM_BOT_URL` (the `t.me/<bot>` link the landing/get-started CTAs open). Vercel's build runs `vercel-build` (`prisma migrate deploy && prisma generate && next build`), so pending migrations apply to prod on every deploy. Crons are declared in `vercel.json`: 01:00 UTC (morning) and 13:00 UTC (evening). Pin the function region to match the Supabase region.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
 9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`. The bot locks to the first chat that messages it (or set `OWNER_CHAT_ID` to pin it) and ignores every other chat.
 
