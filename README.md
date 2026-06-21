@@ -112,4 +112,4 @@ Tap the buttons on the daily nudge, or type:
 
 ---
 
-*Status: working single-user daily driver, POC moving to MVP. Roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).*
+*Status: working daily driver, now multi-user (each Telegram chat is its own account), POC moving to MVP. Roadmap in [`docs/ROADMAP.md`](docs/ROADMAP.md).*

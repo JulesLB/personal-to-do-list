@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Ember (formerly Hermes) — a single-user accountability engine. You text a Telegram bot what you commit to;
+Ember (formerly Hermes) — an accountability engine (multi-user as of Phase 4). You text a Telegram bot what you commit to;
 Claude classifies it into a structured item; a pressure score ranks everything; two daily Vercel
 crons (a morning nudge and an evening honesty check) push the most pressing task; ignoring it long
 enough surfaces a pre-drafted WhatsApp message to a "referee" (wife/sister/colleague). A
@@ -23,7 +23,8 @@ you (a scoreboard of what's slipping plus an AI coach). The bet: capture was nev
 follow-through was — so the code invests in ranking, nagging, and escalation, not storage.
 
 All day/deadline math runs in **HKT (UTC+8, fixed offset, no DST)** so "due today" never drifts on
-the UTC server. The single user is based in Hong Kong.
+the UTC server. Each `User` carries a timezone (default `Asia/Hong_Kong`), but nudge/heat math is
+still HKT for everyone — per-user timezones and quiet hours are PRD-18, not built yet.
 
 ## Commands
 
@@ -65,6 +66,24 @@ Postgres schema or prod. Orchestrated by [scripts/dev-local.mjs](scripts/dev-loc
 
 The data model is deliberately one flat table. Everything else is functions over it.
 
+**Multi-user (Phase 4 — PRD-10/11, shipped 2026-06-21).** Ember is now multi-tenant; this supersedes
+any "single-user" wording below. A **`User`** (`telegramChatId` unique, `name`, `email?`, `timezone`)
+owns every `Item`, and **`Referee`** is a per-user table (`label`, `relation`, `channel`, `contact`,
+`consent`) that replaced the `WIFE_WHATSAPP` / `*_CONSENT` env-var trio. The Telegram chat is the
+identity anchor: `resolveUser(chatId)` ([src/lib/user.ts](src/lib/user.ts)) resolves-or-creates the
+user behind a chat (replacing the old `ensureOwner` single-owner gate), so **signup is open** — any
+chat that messages the bot becomes a user (abuse hardening is PRD-16). Every read/write is scoped by
+`userId`; id-based mutations use `updateMany`/`deleteMany` filtered by `{ id, userId }` so a guessed id
+can't touch another user's item. The sweep loops all users and sends each their own nudge. The board
+reads the logged-in user via `currentUser()` ([src/lib/session.ts](src/lib/session.ts)); board auth is
+a **Telegram-link login** — the bot's `/board` command mints a one-time `login` token, and
+`/login/<token>` swaps it for a session cookie whose token now carries the `userId`
+([src/lib/auth.ts](src/lib/auth.ts), domain-separated from the `login`/`referee` tokens). The shared
+`APP_SECRET` password still works as the owner's fast path (logs in as the first user). Verify isolation
+anytime with `npm run check:isolation` (real-DB integration check). **Gotcha that bit us:**
+`npm run db:migrate` targets the cloud `DATABASE_URL` in `.env`, so it applies migrations to **prod** —
+deploy the matching code in the same beat or the live bot breaks on the schema it can't satisfy.
+
 **`Item`** ([prisma/schema.prisma](prisma/schema.prisma)) — the main entity. Key fields:
 `type` (`task` | `commitment` | `parking`, **derived, never set by hand** — see `deriveType`),
 `important` (a single brain-owned judgment; there is no `urgent` flag, urgency comes from the
@@ -76,11 +95,9 @@ clock) and `cycleStreak`. Accountability memory lives in `nudgeCount` / `ignoreC
 sweep), a **`deferCount`** (bumped every time you actively push an item away — any snooze, or moving
 its deadline to a later date; `deferWarning` shows "Pushed N times" on the board and nudge once it
 hits 2, and a completed cycle resets it), plus an append-only **`Event`** table (`itemId`, `kind` =
-`nudged|snoozed|promised|done|...`, `slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table whose
-only live key is `ownerChatId` — the single user's Telegram chat. It's set **trust-on-first-use**
-(the first chat to message the bot, or `OWNER_CHAT_ID` if set) and then **never overwritten**: the
-webhook rejects any other chat, so a stranger who finds the bot can't read the list or hijack where
-the cron nudges.
+`nudged|snoozed|promised|done|...`, `slot`) that Phase 2 escalation and Phase 3 analytics read. **`Setting`** is a key/value table; since
+Phase 4 its live keys are the per-user coach cache (`reviewAnalysis:<userId>`). The old `ownerChatId`
+key is legacy — identity is the `User.telegramChatId` now, not a Setting (see Multi-user above).
 
 Completing a **commitment** does not close it: it sets `lastDoneAt = now`, clears `lastNudgedAt` /
 `promisedAt`, bumps `cycleStreak`, and leaves `status = open` so it resurfaces one cadence later.
@@ -133,11 +150,11 @@ transcribed by `transcribeVoice` ([src/lib/voice.ts](src/lib/voice.ts)) via Open
 (`whisper-1`, the only non-Anthropic model call, keyed by `OPENAI_API_KEY`), the transcript is echoed
 back (`🎙️ Heard: "…"`) so a bad transcription is visible, then fed into the exact same `interpret`
 path — so every create/update/snooze flow works by voice with no downstream change.
-Auth is two layers: the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET` proves
-the request came from Telegram, then `ensureOwner` locks the bot to the owner chat (see `Setting`
-above) — the secret alone doesn't prove *which* user sent the message, so without the owner check any
-Telegram user who found the bot would be trusted. A non-owner chat is dropped silently. Always returns
-200 (even on internal error) so Telegram doesn't retry.
+Auth: the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET` proves the request came
+from Telegram; then `resolveUser(chatId)` maps the chat to its user and **all queries scope to that
+`userId`** (Phase 4 — the old `ensureOwner` single-owner lock is gone; signup is open). Always returns
+200 (even on internal error) so Telegram doesn't retry. New command: `/board` mints a one-time
+Telegram-link login.
 
 **Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
 pure (items → text + keyboard + topId) and imports no DB/Telegram, so it's unit-tested directly.
@@ -170,8 +187,9 @@ channel is the **Meta WhatsApp Cloud API** ([src/lib/referee.ts](src/lib/referee
 send a `wa.me` link, so real auto-send needs a channel it controls. It posts an approved **template**
 (business-initiated WhatsApp must be a template, not free text) with two vars (owner name, item title);
 `renderEscalation` mirrors the template body so the owner sees exactly what went out. A referee is
-**opted in** when `<LABEL>_WHATSAPP` is set and `<LABEL>_CONSENT !== "false"`; auto-send also needs
-`WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_TEMPLATE`. **When the channel isn't configured the
+**opted in** when their per-user `Referee` row has a real `contact` and `consent = true` (Phase 4 — the
+old `<LABEL>_WHATSAPP` / `<LABEL>_CONSENT` env vars are gone); auto-send also needs the shared channel
+creds `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_ID` / `WHATSAPP_TEMPLATE`. **When the channel isn't configured the
 `send` rung degrades to the existing one-tap `wa.me` draft** (already on the escalate keyboard) and
 tells the owner, rather than going silent or lying. Escalation is logged at every step, never silent.
 
@@ -187,8 +205,8 @@ the board password isn't involved). New `Event` kinds: `escalation_warned`, `tol
 
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
 `Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
-the response omits `chatId` so an unauthenticated probe leaks nothing. Reads `?slot=evening` (defaults
-to morning). Two jobs in
+the response is just safe counters (`{ sent, users }` — how many users got a nudge, out of how many),
+no chat ids. Reads `?slot=evening` (defaults to morning). Two jobs in
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
 Two once-daily jobs fit the Vercel Hobby limit. `vercel.json` also pins **`regions: ["icn1"]`**
 (Seoul) so every serverless function runs in the same region as the Supabase DB (`ap-northeast-2`);
@@ -239,9 +257,10 @@ it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — 
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
 [src/middleware.ts](src/middleware.ts): the `app_auth` cookie is **not** the password — it holds a
 signed, 30-day-expiring HMAC token ([src/lib/auth.ts](src/lib/auth.ts), Web Crypto so it runs on the
-Edge), which the middleware verifies in constant time. `/api/login` checks the typed key against
-`APP_SECRET` (constant-time) and issues the token in a `secure` cookie; rotating `APP_SECRET`
-invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
+Edge) that **carries the `userId`** (Phase 4); the middleware verifies it in constant time and the
+board scopes to that user via `currentUser()`. Sessions come from either the Telegram-link login
+(`/board` → `/login/<token>`) or the `APP_SECRET` password (`/api/login`, the owner fast path → user 1);
+rotating `APP_SECRET` invalidates every outstanding session. The matcher leaves `/login`, `/api`, `_next`, and any path with
 a file extension open (the last so static assets like `/logo.png` aren't redirected to `/login`).
 Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css). A calm skeleton
 ([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. opening Review) during the
@@ -330,4 +349,6 @@ Mutations on either page revalidate both `/` and `/review`.
   comments. Keep every `# comment` on its own line in `.env`/`.env.example` or it folds into the value.
 - Dates from Telegram commands and classify are stored at `09:00 HKT` (`T09:00:00+08:00`); all
   ranking/heat/overdue diffs use calendar-day math in HKT via `startOfDayHKT` (UTC+8, no DST).
-- Single-user by design: no per-user scoping anywhere. `ownerChatId` in `Setting` is the whole auth model for who gets nudged.
+- Multi-tenant (Phase 4): every `Item`/`Referee` is scoped by `userId`, and the `User.telegramChatId`
+  is the identity. Any new query or mutation must filter by the acting user — `resolveUser` on the bot
+  side, `currentUser()` on the board side. Run `npm run check:isolation` after changes that touch data access.
