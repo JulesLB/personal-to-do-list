@@ -206,8 +206,10 @@ export function deferState(item: Item): { count: number } | null {
 }
 
 // Parking is the undated drawer. Show how long something's sat there so a rotting
-// idea is visible, and flag it past the threshold so it forces a decision.
-export const STALE_PARKING_DAYS = 14;
+// idea is visible, and flag it past the threshold so it forces a decision. Past
+// this many days an undated item is rotting: it drives both the board's "decide it"
+// flag and the Review's death zone.
+export const STALE_PARKING_DAYS = 7;
 
 export function ageDaysHKT(createdAt: Date, now: Date): number {
   return Math.round(

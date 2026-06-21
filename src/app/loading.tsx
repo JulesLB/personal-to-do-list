@@ -1,8 +1,8 @@
-// Shown during a navigation (tapping a category filter) while the dynamic board
-// re-renders. Matters most on a cold serverless start, when the render takes a
-// beat — without this the old page just sits there looking frozen. Calm, low-
-// contrast skeletons sized to the real chrome so a warm (~100ms) render doesn't
-// flash anything jarring and the swap to live content doesn't jump.
+// Shown during a navigation while the dynamic board re-renders. Matters most on a
+// cold serverless start, when the render takes a beat; without this the old page
+// just sits there looking frozen. Calm, low-contrast skeletons sized to the real
+// chrome so a warm (~100ms) render doesn't flash anything jarring and the swap to
+// live content doesn't jump.
 export default function Loading() {
   return (
     <main className="wrap" aria-busy="true">
@@ -14,12 +14,6 @@ export default function Loading() {
         <span className="skel skel-chip" />
         <span className="skel skel-add" />
       </header>
-
-      <nav className="filters">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <span key={i} className="skel skel-filter" />
-        ))}
-      </nav>
 
       <section className="skel skel-hero" />
       <div className="skel skel-band" />

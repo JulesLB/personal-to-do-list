@@ -1,8 +1,8 @@
 import type { Item } from "@prisma/client";
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
-import { SnoozeMenu } from "./SnoozeMenu";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
 import { currentStreak } from "@/lib/streak";
@@ -32,31 +32,24 @@ function Cat({ c }: { c: string | null }) {
   );
 }
 
-export default async function Board({
-  searchParams,
-}: {
-  searchParams: Promise<{ cat?: string }>;
-}) {
-  const { cat } = await searchParams;
-  const active = cat && cat in CATEGORIES ? (cat as Category) : null;
-
+export default async function Board() {
   const now = new Date();
   // One batched round trip for the whole render. The streak needs the full table
   // (done/retired rows too: a fire that was due and cleared), so we fetch every
-  // item plus the done events, then derive the open list in memory. allOpen is a
+  // item plus the event log, then derive the open list in memory. allOpen is a
   // strict subset of allItems, so querying it separately was a wasted round trip.
-  const [allItems, dones] = await prisma.$transaction([
+  // We pull all events (not just done) so the weekly receipts can read snoozed /
+  // promised too; the streak just filters to done in memory.
+  const [allItems, events] = await prisma.$transaction([
     prisma.item.findMany(),
-    prisma.event.findMany({ where: { kind: "done" }, select: { createdAt: true } }),
+    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
   ]);
+  const dones = events.filter((e) => e.kind === "done");
   const allOpen = allItems.filter((i) => i.status === "open");
   const streak = currentStreak(allItems, dones, now);
-  const countFor = (c: Category) =>
-    allOpen.filter((i) => i.type !== "parking" && i.category === c).length;
 
-  const scoped = active ? allOpen.filter((i) => i.category === active) : allOpen;
-  const ranked = rankActionable(scoped, now);
-  const parking = scoped.filter((i) => i.type === "parking");
+  const ranked = rankActionable(allOpen, now);
+  const parking = allOpen.filter((i) => i.type === "parking");
 
   const hero = ranked[0] ?? null;
   const rest = ranked.slice(1);
@@ -96,12 +89,14 @@ export default async function Board({
     return (
       <div className={`row tone-${dueTone(i, now)}${overdue ? " overdue" : ""}`} data-burnable>
         <EditTrigger item={toEditable(i)} className="row-main">
-          <div className="row-title">{i.title}</div>
+          <div className="row-title">
+            {i.title}
+            <Pushed i={i} />
+          </div>
           <div className="row-meta">
             <Cat c={i.category} />
             {due ? <span className={`dl dl-${dueTone(i, now)}`}>{due}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
-            <Pushed i={i} />
           </div>
         </EditTrigger>
         <div className="row-actions">
@@ -209,34 +204,20 @@ export default async function Board({
           <span className="streak-text">
             {streak > 0 ? (
               <>
-                <strong>{streak}</strong> days streak
+                <strong>{streak}</strong> day streak
               </>
             ) : (
               "No streak yet"
             )}
           </span>
         </span>
-        <AddItem />
+        <div className="topbar-right">
+          <Link href="/review" className="nav-btn">
+            Review
+          </Link>
+          <AddItem />
+        </div>
       </header>
-
-      <nav className="filters">
-        {(Object.keys(CATEGORIES) as Category[]).map((c) => {
-          const m = CATEGORIES[c];
-          const on = active === c;
-          return (
-            <a
-              key={c}
-              href={on ? "/" : `/?cat=${c}`}
-              className={`cat-chip${on ? " active" : ""}`}
-              style={{ "--c": m.dot } as React.CSSProperties}
-            >
-              <span className="dot" />
-              <span className="cat-chip-name">{m.label}</span>
-              <span className="cat-chip-count">{countFor(c)}</span>
-            </a>
-          );
-        })}
-      </nav>
 
       {hero ? (
         // Keyed by item id so each promoted hero gets its own fresh node. The hero
@@ -248,7 +229,7 @@ export default async function Board({
         <section key={hero.item.id} className={`hero hero-${hero.heat}`} data-burnable>
           <div className="hero-left">
             <div className="hero-kicker">
-              {hero.heat === "burning" ? "🔥 Do this first" : "Top priority"}
+              {hero.heat === "burning" ? "Do this first" : "Top priority"}
             </div>
             <EditTrigger item={toEditable(hero.item)} className="hero-body">
               <div className="hero-title">{hero.item.title}</div>
@@ -262,18 +243,15 @@ export default async function Board({
           </div>
           <div className="hero-actions">
             <BurnButton id={hero.item.id} variant="hero" />
-            <SnoozeMenu id={hero.item.id} />
           </div>
         </section>
       ) : (
         <section className="empty-state">
-          {active
-            ? `Nothing in ${CATEGORIES[active].label} right now.`
-            : "Nothing on the list. Text the bot to add something."}
+          Nothing on the list. Text the bot to add something.
         </section>
       )}
 
-      <Band rows={burning} ico="🔥" name="On fire" cls="burning" />
+      <Band rows={burning} ico="🚨" name="On fire" cls="burning" />
       <Band rows={soon} ico="⏳" name="Heating up" cls="soon" collapsible open />
       <Band rows={later} ico="🧊" name="Back burner" cls="later" collapsible />
       {parking.length ? (
@@ -300,6 +278,7 @@ export default async function Board({
           </div>
         </details>
       ) : null}
+
     </main>
   );
 }

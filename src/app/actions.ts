@@ -2,8 +2,15 @@
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { snoozeUntil, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
+import { forceAnalysis } from "@/lib/reviewAnalysis";
+
+// Both control surfaces read the same items, so every mutation refreshes both the
+// board and the Review page.
+function revalidateBoards() {
+  revalidatePath("/");
+  revalidatePath("/review");
+}
 
 export async function markDone(id: number) {
   const item = await prisma.item.findUnique({ where: { id } });
@@ -25,12 +32,12 @@ export async function markDone(id: number) {
     await prisma.item.update({ where: { id }, data: { status: "done", doneAt: new Date() } });
   }
   await prisma.event.create({ data: { itemId: id, kind: "done" } });
-  revalidatePath("/");
+  revalidateBoards();
 }
 
 export async function retire(id: number) {
   await prisma.item.update({ where: { id }, data: { status: "retired", doneAt: new Date() } });
-  revalidatePath("/");
+  revalidateBoards();
 }
 
 // Edit the fields you control: title, category, referee, deadline, and whether it
@@ -66,7 +73,7 @@ export async function updateItem(id: number, formData: FormData) {
     },
   });
   if (pushedLater) await prisma.event.create({ data: { itemId: id, kind: "snoozed" } });
-  revalidatePath("/");
+  revalidateBoards();
 }
 
 // Add an item straight from the board. Same shape as the Telegram create path:
@@ -90,27 +97,23 @@ export async function createItem(formData: FormData) {
       cadence,
     },
   });
-  revalidatePath("/");
+  revalidateBoards();
 }
 
 export async function remove(id: number) {
   await prisma.item.delete({ where: { id } });
-  revalidatePath("/");
+  revalidateBoards();
 }
 
-// Defer with intent. Clearing lastNudgedAt lets the next sweep treat the
-// resurfacing as a fresh nudge rather than an ignore.
-export async function snoozeItem(id: number, preset: string) {
-  if (!isSnoozePreset(preset)) return;
-  await prisma.item.update({
-    where: { id },
-    data: {
-      snoozeUntil: snoozeUntil(preset, new Date()),
-      lastNudgedAt: null,
-      deferCount: { increment: 1 },
-    },
-  });
-  await prisma.event.create({ data: { itemId: id, kind: "snoozed" } });
-  revalidatePath("/");
+// Regenerate the AI coach read on demand (the Review page's Refresh button). One
+// Haiku call, then a /review revalidate so the fresh read renders.
+export async function refreshAnalysis() {
+  const now = new Date();
+  const [items, events] = await prisma.$transaction([
+    prisma.item.findMany(),
+    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
+  ]);
+  await forceAnalysis(items, events, now);
+  revalidatePath("/review");
 }
 

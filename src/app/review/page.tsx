@@ -1,0 +1,100 @@
+import type { Item } from "@prisma/client";
+import Link from "next/link";
+import { prisma } from "@/lib/db";
+import { dueInLabel, commitmentDue, daysOverdue, isoHKT } from "@/lib/rank";
+import { triage, BUCKET_WEIGHT } from "@/lib/triage";
+import { weeklyReceipts } from "@/lib/receipts";
+import { loadAnalysis } from "@/lib/reviewAnalysis";
+import { waLink } from "@/lib/waLink";
+import { ReviewClient, type ReviewEntry } from "./ReviewClient";
+
+export const dynamic = "force-dynamic";
+
+const toEditable = (i: Item) => ({
+  id: i.id,
+  title: i.title,
+  category: i.category,
+  deadline: i.deadline ? isoHKT(i.deadline) : null,
+  referee: i.referee,
+  cadence: i.cadence,
+});
+
+// What the manual "Tell <referee>" link says. Mirrors the sharp tone of the
+// auto-escalation copy so a hand-sent poke reads the same as a cron-sent one.
+const refDraft = (i: Item) =>
+  `Accountability check: I committed to "${i.title}" and I keep dodging it. Hold me to it.`;
+
+export default async function Review() {
+  const now = new Date();
+  const [allItems, events] = await prisma.$transaction([
+    prisma.item.findMany(),
+    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
+  ]);
+  const open = allItems.filter((i) => i.status === "open");
+
+  const t = triage(open, events, now);
+  const receipts = weeklyReceipts(allItems, events, now);
+  const analysis = await loadAnalysis(allItems, events, now);
+
+  // A flat count for the scoreboard: how many open items are already past due. It
+  // cuts across buckets (an overdue item may also be dodged or escalated), so it's
+  // its own tally, not a triage bucket.
+  const overdue = open.filter((i) => daysOverdue(i, now) > 0).length;
+
+  const entries: ReviewEntry[] = t.entries.map(({ item, bucket }) => {
+    const due =
+      item.type === "commitment"
+        ? dueInLabel(commitmentDue(item), now)
+        : item.deadline
+          ? dueInLabel(item.deadline, now)
+          : null;
+    // Death zone shows the board's red "decide it" flag instead of a text detail,
+    // so it's left null here and rendered as a chip in the client.
+    const detail =
+      bucket === "escalated"
+        ? `told ${item.referee}`
+        : bucket === "dodging"
+          ? `pushed ${item.deferCount}×`
+          : null;
+    const wa = bucket === "escalated" ? waLink(item.referee, refDraft(item)) : null;
+    return {
+      id: item.id,
+      bucket,
+      weight: BUCKET_WEIGHT[bucket],
+      title: item.title,
+      category: item.category,
+      referee: item.referee,
+      due,
+      detail,
+      commitment: item.type === "commitment",
+      waUrl: wa,
+      edit: toEditable(item),
+    };
+  });
+
+  return (
+    <main className="wrap">
+      {/* Same baked fractal-noise filter the board uses for the burn-to-ash edge,
+          redeclared here so the Review page's flames can reference it too. Static
+          on purpose — no per-frame CPU. */}
+      <svg aria-hidden width="0" height="0" style={{ position: "absolute" }}>
+        <filter id="ember-fire" x="-25%" y="-25%" width="150%" height="150%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.02 0.045" numOctaves={3} seed={7} result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="46" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
+
+      <header className="topbar topbar-review">
+        <span className="brand">
+          <img className="brand-logo" src="/logo.png" alt="" width={24} height={24} />
+          <span className="wordmark">Ember</span>
+        </span>
+        <Link href="/" className="nav-btn">
+          Tasks
+        </Link>
+      </header>
+
+      <ReviewClient entries={entries} receipts={receipts} analysis={analysis} overdue={overdue} />
+    </main>
+  );
+}

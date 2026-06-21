@@ -54,7 +54,9 @@ body {
   align-items: center;
   gap: 8px;
 }
-/* A circle with just a +, matched to the streak chip's height. */
+/* A circle with just a +, matched to the streak chip's height. Neutral grey, same
+   palette as the Review button, so the only loud color in the chrome is the streak;
+   red stays reserved for urgency in the content. */
 .add-btn {
   justify-self: end;
   display: inline-flex;
@@ -66,15 +68,17 @@ body {
   font-size: 20px;
   font-weight: 600;
   line-height: 1;
-  color: var(--burn-text);
-  background: var(--burn-soft);
-  border: 1px solid color-mix(in srgb, var(--burn) 35%, #fff);
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
   border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--shadow);
 }
 .add-btn:hover {
-  background: color-mix(in srgb, var(--burn-soft) 80%, var(--burn));
+  background: var(--panel);
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 .brand-logo {
   border-radius: 7px;
@@ -119,87 +123,42 @@ body {
 .streak-flame {
   font-size: 14px;
   line-height: 1;
+  display: inline-block;
 }
+/* A live flame: an uneven flicker, not a smooth pulse. The keyframes step at odd
+   intervals so it dances rather than breathes, and a warm drop-shadow swells with
+   it for a real glow. transform/opacity/filter only, so it stays off the main
+   thread. */
 .streak.lit .streak-flame {
-  animation: streak-flicker 1.6s ease-in-out infinite;
-  transform-origin: 50% 80%;
+  animation: streak-flicker 0.9s ease-in-out infinite;
+  transform-origin: 50% 85%;
 }
 @keyframes streak-flicker {
-  0%,
-  100% {
-    transform: scale(1) rotate(-2deg);
-    filter: brightness(1);
+  0% {
+    transform: scale(1) rotate(-3deg) translateY(0);
+    filter: brightness(1) drop-shadow(0 0 1px rgba(255, 120, 20, 0.5));
   }
-  50% {
-    transform: scale(1.12) rotate(2deg);
-    filter: brightness(1.15);
+  30% {
+    transform: scale(1.15) rotate(2deg) translateY(-0.5px);
+    filter: brightness(1.2) drop-shadow(0 0 4px rgba(255, 140, 30, 0.85));
+  }
+  55% {
+    transform: scale(1.04) rotate(-2deg) translateY(0);
+    filter: brightness(1.08) drop-shadow(0 0 2px rgba(255, 120, 20, 0.6));
+  }
+  80% {
+    transform: scale(1.18) rotate(3deg) translateY(-0.5px);
+    filter: brightness(1.25) drop-shadow(0 0 5px rgba(255, 150, 40, 0.9));
+  }
+  100% {
+    transform: scale(1) rotate(-3deg) translateY(0);
+    filter: brightness(1) drop-shadow(0 0 1px rgba(255, 120, 20, 0.5));
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .streak.lit .streak-flame {
     animation: none;
   }
-}
-
-/* Sticky filter bar: the six categories as equal-width chips. Three per row on
-   mobile (two rows), six across on wider screens. Sticks to the top on scroll and
-   breaks out of the wrap gutters so the bar spans full width. */
-.filters {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 7px;
-  margin: 0 -18px 16px;
-  padding: 8px 18px 9px;
-  /* An opaque fill, not a backdrop blur. A sticky blurred bar re-samples and
-     re-blurs everything scrolling behind it every frame, a classic mobile
-     scroll-jank source. A solid fill covers the rows underneath for free. */
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-}
-@media (min-width: 560px) {
-  .filters {
-    grid-template-columns: repeat(6, 1fr);
-  }
-}
-
-.cat-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  text-decoration: none;
-  white-space: nowrap;
-  box-shadow: var(--shadow);
-}
-.cat-chip:hover {
-  border-color: var(--c);
-}
-.cat-chip.active {
-  background: color-mix(in srgb, var(--c) 16%, #fff);
-  border-color: var(--c);
-  font-weight: 600;
-}
-.cat-chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.cat-chip-count {
-  color: var(--faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.cat-chip.active .cat-chip-count {
-  color: var(--muted);
 }
 
 .dot {
@@ -440,9 +399,14 @@ details.band[open] > summary.band-head::after {
 .row-main:focus-visible {
   box-shadow: 0 0 0 2px var(--soon);
 }
+/* The defer warning sits inline right after the title text, so the meta line below
+   stays short (category, due, referee only). */
 .row-title {
   font-size: 14.5px;
   line-height: 1.35;
+}
+.row-title .defer-warn {
+  margin-left: 5px;
 }
 .row-meta {
   display: flex;
@@ -960,10 +924,6 @@ details.band[open] > summary.band-head::after {
   height: 32px;
   border-radius: 50%;
 }
-.skel-filter {
-  height: 32px;
-  border-radius: 999px;
-}
 .skel-hero {
   height: 98px;
   border-radius: 16px;
@@ -978,4 +938,336 @@ details.band[open] > summary.band-head::after {
   .skel {
     animation: none;
   }
+}
+
+/* ── Review page ──────────────────────────────────────────────────────────── */
+
+/* Topbar variant: brand left, the single nav button right. */
+.topbar-review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+/* One contextual button instead of a two-tab toggle: the board shows "Review →",
+   the review page shows "← Tasks". The page content makes "where am I" obvious, so
+   the button only needs to point at the other place. */
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+.nav-btn:hover {
+  background: var(--panel);
+  border-color: var(--line-strong);
+}
+
+/* The scoreboard: the overview, one box per slipping signal plus the streak. A box
+   sits calm and grey at zero and lights up only when it has a count, so a glance
+   reads the danger at once. Three across on mobile, six on wider screens. */
+.scoreboard {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-bottom: 14px;
+}
+@media (min-width: 560px) {
+  .scoreboard {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+.sb-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: center;
+}
+.sb-ico {
+  font-size: 18px;
+  line-height: 1;
+  filter: grayscale(0.6) opacity(0.55);
+}
+.sb-num {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--faint);
+}
+.sb-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--muted);
+}
+/* Lit: it has a count, so it stops being decoration. */
+.sb-box.active {
+  background: var(--burn-soft);
+  border-color: color-mix(in srgb, var(--burn) 30%, #fff);
+}
+.sb-box.active .sb-ico {
+  filter: none;
+}
+.sb-box.active .sb-num {
+  color: var(--burn-text);
+}
+/* Escalated is the worst case: a real person was told. Fill it red. */
+.sb-escalated.active {
+  background: var(--burn);
+  border-color: var(--burn-2);
+}
+.sb-escalated.active .sb-num,
+.sb-escalated.active .sb-label {
+  color: #fff;
+}
+/* The streak is the one good box: warm gold when lit, not alarm red. */
+.sb-streak.active {
+  background: color-mix(in srgb, var(--soon) 18%, #fff);
+  border-color: color-mix(in srgb, var(--soon) 42%, #fff);
+}
+.sb-streak.active .sb-num {
+  color: var(--soon-text);
+}
+/* Cleared this week is a win, so it reads green (the app's Done color), not alarm. */
+.sb-cleared.active {
+  background: color-mix(in srgb, var(--done) 16%, #fff);
+  border-color: color-mix(in srgb, var(--done) 40%, #fff);
+}
+.sb-cleared.active .sb-num {
+  color: var(--done);
+}
+
+/* Right cluster of the board topbar: the Review button plus the + button, kept
+   separate from the streak so navigation never rides on the streak chip. */
+.topbar-right {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── AI coach card ────────────────────────────────────────────────────────────
+   The headline value: Claude's read in three beats, the pattern, what to change,
+   then the one move to make now. */
+.coach {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 14px 15px;
+  margin-bottom: 14px;
+}
+.coach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.coach-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+.coach-refresh {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.coach-refresh:hover {
+  color: var(--text);
+}
+/* Three beats, each a tiny label over a line, separated by a hairline rule and a
+   bit of air so they read as distinct steps. The last one ("Do this") gets a warm
+   left edge so the eye lands on the action even on a 2-second skim. */
+.coach-beat {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.coach-beat:first-of-type {
+  padding-top: 6px;
+  border-top: none;
+}
+.coach-sub {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  margin-bottom: 4px;
+}
+.coach-text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  margin: 0;
+}
+.coach-do {
+  border-left: 3px solid var(--burn);
+  padding-left: 11px;
+  margin-left: -2px;
+}
+.coach-do .coach-sub {
+  color: var(--burn-text);
+}
+.coach-do .coach-text {
+  font-weight: 600;
+}
+.coach-stamp {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* ── Triage sections ─────────────────────────────────────────────────────────
+   One card per bucket, hottest at the top. The header carries the heat tint; rows
+   are plain so the color budget stays on the headers and the fire. */
+.triage {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.triage-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 14px 9px;
+  flex-wrap: wrap;
+}
+.triage-ico {
+  font-size: 15px;
+}
+.triage-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.triage-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.triage-blurb {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+/* The escalated bucket carries real heat in its header. */
+.triage-escalated .triage-name {
+  color: var(--burn-text);
+}
+.triage-escalated {
+  border-color: #f3b8b8;
+}
+.triage-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 12px;
+}
+.trow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  transition: max-height 0.32s ease, padding 0.32s ease, margin 0.32s ease,
+    opacity 0.32s ease;
+}
+.triage-escalated .trow {
+  background: var(--burn-soft);
+  border-color: #f3cccc;
+}
+.trow-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.trow-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.trow-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+.trow-detail {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.trow-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.tell-ref {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--burn);
+  border-radius: 999px;
+  padding: 6px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.tell-ref:hover {
+  background: var(--burn-2);
+}
+
+/* The reward: nothing slipping. */
+.all-clear {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  padding: 28px 20px 34px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.all-clear-ico {
+  font-size: 34px;
+  margin-bottom: 4px;
+}
+.all-clear strong {
+  font-size: 16px;
+  color: var(--text);
+}
+.all-clear span {
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 30ch;
 }

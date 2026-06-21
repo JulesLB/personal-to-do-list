@@ -14,10 +14,14 @@ export function BurnButton({
   id,
   variant,
   commitment,
+  onDone,
 }: {
   id: number;
   variant: "row" | "hero";
   commitment?: boolean;
+  // Fired the instant the row vanishes (after the burn, or immediately when motion
+  // is off). The Review page uses it to cool the bonfire in sync with the flames.
+  onDone?: () => void;
 }) {
   const [pending, start] = useTransition();
   const fired = useRef(false);
@@ -27,7 +31,10 @@ export function BurnButton({
     fired.current = true;
     const card = e.currentTarget.closest<HTMLElement>("[data-burnable]");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const go = () => start(() => markDone(id));
+    const go = () => {
+      onDone?.();
+      start(() => markDone(id));
+    };
     if (card && !reduce) {
       card.classList.add("igniting");
       window.setTimeout(() => {
