@@ -6,6 +6,7 @@ import { triage, BUCKET_WEIGHT } from "@/lib/triage";
 import { weeklyReceipts } from "@/lib/receipts";
 import { loadAnalysis } from "@/lib/reviewAnalysis";
 import { waLink } from "@/lib/waLink";
+import { currentUser } from "@/lib/session";
 import { ReviewClient, type ReviewEntry } from "./ReviewClient";
 
 export const dynamic = "force-dynamic";
@@ -26,15 +27,22 @@ const refDraft = (i: Item) =>
 
 export default async function Review() {
   const now = new Date();
-  const [allItems, events] = await prisma.$transaction([
-    prisma.item.findMany(),
-    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
-  ]);
+  // PRD-11: scope to the logged-in user (from the signed session cookie).
+  const me = await currentUser();
+  const [allItems, events] = me
+    ? await prisma.$transaction([
+        prisma.item.findMany({ where: { userId: me.id } }),
+        prisma.event.findMany({
+          where: { item: { userId: me.id } },
+          select: { itemId: true, kind: true, createdAt: true },
+        }),
+      ])
+    : [[], []];
   const open = allItems.filter((i) => i.status === "open");
 
   const t = triage(open, events, now);
   const receipts = weeklyReceipts(allItems, events, now);
-  const analysis = await loadAnalysis(allItems, events, now);
+  const analysis = me ? await loadAnalysis(me.id, allItems, events, now) : null;
 
   // A flat count for the scoreboard: how many open items are already past due. It
   // cuts across buckets (an overdue item may also be dodged or escalated), so it's

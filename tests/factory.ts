@@ -10,6 +10,7 @@ export const daysAhead = (n: number) => new Date(NOW.getTime() + n * DAY);
 export function make(overrides: Partial<Item> = {}): Item {
   return {
     id: 1,
+    userId: 1,
     title: "Test item",
     type: "task",
     important: true,

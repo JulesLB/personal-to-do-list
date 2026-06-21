@@ -21,8 +21,11 @@ const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
 const env = { ...process.env, DATABASE_URL: "file:./dev.db" };
 const run = (args) => execFileSync(process.execPath, args, { stdio: "inherit", env, cwd: root });
 
-console.log("→ Creating / updating local SQLite DB (prisma/dev.db)");
-run([prismaBin, "db", "push", "--schema", schema, "--accept-data-loss"]);
+console.log("→ Creating / resetting local SQLite DB (prisma/dev.db)");
+// --force-reset drops and recreates the DB so schema changes that can't migrate in
+// place (e.g. a new required column like userId) always apply. The sandbox is
+// reseeded below every run, so there's no data worth keeping.
+run([prismaBin, "db", "push", "--schema", schema, "--force-reset", "--accept-data-loss"]);
 
 console.log("→ Seeding sample items (this resets the local DB each run)");
 run([path.join(root, "prisma", "seed.mjs")]);

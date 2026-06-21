@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working agreement (binding, every session)
+
+- **Plan before building.** Before writing code for any feature or milestone, present the plan — which
+  feature, the approach, the schema/file touches, and the definition of done — and get explicit
+  sign-off. No drafting code until the plan is validated.
+- **Challenge as a CX expert.** When Jules proposes a feature or enhancement, evaluate it first through
+  a customer-experience / product lens: who actually feels it, whether it earns its cost, whether
+  there's a cheaper way to test the bet. Push back when the idea is weak or premature *before* planning
+  the build. Be a friction layer, not a yes-man.
+
 ## What this is
 
 Ember (formerly Hermes) — a single-user accountability engine. You text a Telegram bot what you commit to;
@@ -291,9 +301,13 @@ instead of listing what to do, and leans on three pure modules:
   — "Your read", the headline value: one Haiku call grounded in the real slipping items + week, returning
   three beats — `pattern` (the habit, item by title), `soWhat` (what to change), `doThis` (one move, one
   sentence). The prompt is held to the anti-AI voice spec (no banned words, no negative-parallelism
-  reframes). Cached in `Setting` key `reviewAnalysis`; **regenerated only via the Refresh button** (server
-  action `refreshAnalysis`), so a page load never silently pays for a model call. Degrades to no card on
-  API failure; an old-shape cache regenerates.
+  reframes). Cached per-user in `Setting` key `reviewAnalysis:<userId>` with a **7-day staleness window**:
+  `loadAnalysis` serves the cache for a week (so repeated Review visits cost no tokens), then the next page
+  load regenerates it once and re-caches, keeping the read current with your week. The **Refresh button**
+  (server action `refreshAnalysis`) still forces a fresh one on demand. So a model call happens at most
+  once a week per user from page loads, plus any manual refreshes — never per visit. The scoreboard numbers
+  are pure DB math, recomputed live every load at no token cost. Degrades to no card on API failure; an
+  old-shape cache regenerates.
 
 The page renders, top to bottom ([src/app/review/ReviewClient.tsx](src/app/review/ReviewClient.tsx)): a
 **scoreboard** of count boxes — 🚨 escalated, ⏰ overdue (a flat count of open items past due, cutting

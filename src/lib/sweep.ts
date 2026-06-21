@@ -3,17 +3,22 @@ import { sendMessage, type InlineKeyboard } from "./telegram";
 import { buildDailyNudge, type Slot } from "./nudge";
 import { isCritical } from "./rank";
 import { escalationStep, type EscalationStep } from "./escalate";
-import { isOptedInReferee, canAutoSend, sendToReferee } from "./referee";
-import type { Item } from "@prisma/client";
+import { getReferee, isOptedInReferee, canAutoSend, sendToReferee } from "./referee";
+import type { Item, Referee, User } from "@prisma/client";
 
 export type { Slot };
 
 // Resolve the ladder rung for the item we're nudging. Short-circuits before
 // touching the Event table when there's nothing to escalate, so a quiet item
-// (and the existing sweep tests) never query events.
-async function escalationFor(item: Item, now: Date): Promise<EscalationStep> {
+// (and the existing sweep tests) never query events. The referee row is fetched
+// by the caller (per-user) and passed in.
+async function escalationFor(
+  item: Item,
+  now: Date,
+  ref: Referee | null
+): Promise<EscalationStep> {
   if (!item.important || !isCritical(item, now)) return "none";
-  if (!item.referee || !isOptedInReferee(item.referee)) return "none";
+  if (!isOptedInReferee(ref)) return "none";
   // A commitment resets each honored cycle, so only count warnings/sends since
   // the current cycle's anchor; a task's anchor is its creation.
   const anchor = item.lastDoneAt ?? item.createdAt;
@@ -42,37 +47,32 @@ export type Sender = (
   replyMarkup?: InlineKeyboard
 ) => Promise<unknown>;
 
-// The side-effecting wrapper the cron calls. buildDailyNudge stays pure; every
-// DB read, send, and accountability-memory write lives here.
-export async function runSweep(
-  slot: Slot = "morning",
-  send: Sender = sendMessage
-): Promise<{
-  sent: number;
-  chatId: string | null;
-  topId: number | null;
-}> {
-  const setting = await prisma.setting.findUnique({ where: { key: "ownerChatId" } });
-  const chatId = setting?.value ?? process.env.OWNER_CHAT_ID ?? null;
-  if (!chatId) return { sent: 0, chatId: null, topId: null };
-
-  const now = new Date();
-  const items = await prisma.item.findMany({ where: { status: "open" } });
+// Nudge a single user: read their open items, build the nudge, fold in any
+// referee escalation, send to their chat, and write accountability memory.
+// Returns whether a message went out. buildDailyNudge stays pure; the side
+// effects live here.
+async function sweepUser(
+  user: User,
+  now: Date,
+  slot: Slot,
+  send: Sender
+): Promise<boolean> {
+  const items = await prisma.item.findMany({ where: { status: "open", userId: user.id } });
   const live = items.filter((i) => !(i.snoozeUntil && i.snoozeUntil > now));
 
   const nudge = buildDailyNudge(live, now, slot);
-  if (!nudge) {
-    // Both slots stay silent when nothing is pressing. A ping on a quiet day
-    // teaches the user to swipe the bot away unread, spending the trust the
-    // nudge depends on. The "clean slate" win moves to the weekly receipts (M3).
-    return { sent: 0, chatId, topId: null };
-  }
+  // Both slots stay silent when nothing is pressing. A ping on a quiet day teaches
+  // the user to swipe the bot away unread, spending the trust the nudge depends
+  // on. The "clean slate" win moves to the weekly receipts (M3).
+  if (!nudge) return false;
 
   // Decide whether this nudge also pulls the referee in, before we send so the
   // warning rides along in the same message.
   const top = live.find((i) => i.id === nudge.topId)!;
-  const step = await escalationFor(top, now);
-  const willSend = step === "send" && canAutoSend(top.referee);
+  const ref = await getReferee(user.id, top.referee);
+  const step = await escalationFor(top, now, ref);
+  const willSend = step === "send" && canAutoSend(ref);
+  const ownerName = user.name || "Your friend";
 
   let text = nudge.text;
   if (step === "warn") {
@@ -83,12 +83,10 @@ export async function runSweep(
     text += `\n\nI'd message your ${top.referee} now, but WhatsApp auto-send isn't set up. Tap the button to send it yourself.`;
   }
 
-  await send(chatId, text, nudge.keyboard);
+  await send(user.telegramChatId, text, nudge.keyboard);
 
-  // Accountability memory: if the item we're nudging was already nudged before
-  // and is still open, the last nudge was ignored. Done and snooze remove an
-  // item from the list; a kept promise gets marked done. So a re-nudge is the
-  // signal that you bounced it.
+  // Accountability memory: a re-nudge of a still-open item means the last nudge
+  // was ignored (done and snooze remove an item; a kept promise gets marked done).
   const ignored = !!top.lastNudgedAt;
   await prisma.item.update({
     where: { id: nudge.topId },
@@ -103,21 +101,36 @@ export async function runSweep(
   if (step === "warn") {
     await prisma.event.create({ data: { itemId: top.id, kind: "escalation_warned", slot } });
   }
-  if (willSend) {
-    const res = await sendToReferee(top.referee!, top);
+  if (willSend && ref) {
+    const res = await sendToReferee(ref, top, ownerName);
     if (res.ok) {
       await prisma.event.create({ data: { itemId: top.id, kind: "told_referee", slot } });
       await send(
-        chatId,
+        user.telegramChatId,
         `Done. I just messaged your ${top.referee}. Here's what I sent:\n\n"${res.rendered}"`
       );
     } else {
       await send(
-        chatId,
+        user.telegramChatId,
         `Tried to message your ${top.referee} but the WhatsApp send failed. Check the setup.`
       );
     }
   }
 
-  return { sent: 1, chatId, topId: nudge.topId };
+  return true;
+}
+
+// The side-effecting wrapper the cron calls. Sweeps every user, sending each
+// their own top item.
+export async function runSweep(
+  slot: Slot = "morning",
+  send: Sender = sendMessage
+): Promise<{ sent: number; users: number }> {
+  const now = new Date();
+  const users = await prisma.user.findMany();
+  let sent = 0;
+  for (const user of users) {
+    if (await sweepUser(user, now, slot, send)) sent++;
+  }
+  return { sent, users: users.length };
 }

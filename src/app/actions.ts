@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { deriveType } from "@/lib/rank";
 import { forceAnalysis } from "@/lib/reviewAnalysis";
+import { currentUser } from "@/lib/session";
 
 // Both control surfaces read the same items, so every mutation refreshes both the
 // board and the Review page.
@@ -13,7 +14,11 @@ function revalidateBoards() {
 }
 
 export async function markDone(id: number) {
-  const item = await prisma.item.findUnique({ where: { id } });
+  // PRD-11: every board mutation scopes to the logged-in user. Scoping by userId
+  // stops a guessed id from touching another user's item.
+  const me = await currentUser();
+  if (!me) return;
+  const item = await prisma.item.findFirst({ where: { id, userId: me.id } });
   if (!item) return;
   // A commitment is honored per cycle, not closed forever: reset its clock and
   // keep it open. Everything else closes.
@@ -36,7 +41,12 @@ export async function markDone(id: number) {
 }
 
 export async function retire(id: number) {
-  await prisma.item.update({ where: { id }, data: { status: "retired", doneAt: new Date() } });
+  const me = await currentUser();
+  if (!me) return;
+  await prisma.item.updateMany({
+    where: { id, userId: me.id },
+    data: { status: "retired", doneAt: new Date() },
+  });
   revalidateBoards();
 }
 
@@ -49,7 +59,9 @@ export async function retire(id: number) {
 export async function updateItem(id: number, formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return;
-  const cur = await prisma.item.findUnique({ where: { id } });
+  const me = await currentUser();
+  if (!me) return;
+  const cur = await prisma.item.findFirst({ where: { id, userId: me.id } });
   if (!cur) return;
   const deadlineStr = String(formData.get("deadline") ?? "");
   const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
@@ -83,11 +95,14 @@ export async function updateItem(id: number, formData: FormData) {
 export async function createItem(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   if (!title) return;
+  const me = await currentUser();
+  if (!me) return;
   const deadlineStr = String(formData.get("deadline") ?? "");
   const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
   const cadence = String(formData.get("cadence") || "") || null;
   await prisma.item.create({
     data: {
+      userId: me.id,
       title,
       type: deriveType(deadline, cadence),
       category: String(formData.get("category") || "") || null,
@@ -101,7 +116,9 @@ export async function createItem(formData: FormData) {
 }
 
 export async function remove(id: number) {
-  await prisma.item.delete({ where: { id } });
+  const me = await currentUser();
+  if (!me) return;
+  await prisma.item.deleteMany({ where: { id, userId: me.id } });
   revalidateBoards();
 }
 
@@ -109,11 +126,16 @@ export async function remove(id: number) {
 // Haiku call, then a /review revalidate so the fresh read renders.
 export async function refreshAnalysis() {
   const now = new Date();
+  const me = await currentUser();
+  if (!me) return;
   const [items, events] = await prisma.$transaction([
-    prisma.item.findMany(),
-    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
+    prisma.item.findMany({ where: { userId: me.id } }),
+    prisma.event.findMany({
+      where: { item: { userId: me.id } },
+      select: { itemId: true, kind: true, createdAt: true },
+    }),
   ]);
-  await forceAnalysis(items, events, now);
+  await forceAnalysis(me.id, items, events, now);
   revalidatePath("/review");
 }
 

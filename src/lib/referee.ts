@@ -1,33 +1,35 @@
-import type { Item } from "@prisma/client";
+import { prisma } from "./db";
+import type { Item, Referee } from "@prisma/client";
 
-// Referee contact + consent. Single-user, so this stays env-based like waLink:
-// each referee maps to a WhatsApp number, and is "opted in" for server auto-send
-// when we have that number and consent hasn't been explicitly revoked.
-const phones: Record<string, string | undefined> = {
-  wife: process.env.WIFE_WHATSAPP,
-  sister: process.env.SISTER_WHATSAPP,
-  colleague: process.env.COLLEAGUE_WHATSAPP,
-};
+// PRD-10: referees live in the per-user Referee table, not env vars. A referee is
+// "opted in" for server auto-send when their row has a real contact number and
+// consent is on. The WhatsApp app credentials (token/phone-id/template) stay env,
+// since that's shared channel infrastructure, not per-referee data.
+//
+// Note: the legacy WIFE_WHATSAPP / *_CONSENT env vars are superseded. The
+// migration seeds the owner's referee rows from existing item labels with a null
+// contact; populate Referee.contact (M2 go-live / PRD-12 onboarding) for auto-send
+// to fire. Until then `send` degrades to the one-tap wa.me draft, as before.
 
-const consentEnv: Record<string, string | undefined> = {
-  wife: process.env.WIFE_CONSENT,
-  sister: process.env.SISTER_CONSENT,
-  colleague: process.env.COLLEAGUE_CONSENT,
-};
+export async function getReferee(
+  userId: number,
+  label: string | null
+): Promise<Referee | null> {
+  if (!label) return null;
+  return prisma.referee
+    .findUnique({ where: { userId_label: { userId, label } } })
+    .catch(() => null);
+}
 
 // E.164 digits only; reject placeholders that strip to too few digits.
-export function refereePhone(label: string | null): string | null {
-  if (!label) return null;
-  const num = phones[label]?.replace(/[^0-9]/g, "");
+export function refereePhone(ref: Referee | null): string | null {
+  const num = ref?.contact?.replace(/[^0-9]/g, "");
   return num && num.length >= 8 ? num : null;
 }
 
-// Opted in = we have a real number and consent wasn't turned off. Consent
-// defaults on once a number is set (you only add a referee you've squared with);
-// set <LABEL>_CONSENT="false" to keep the number but stop auto-sends.
-export function isOptedInReferee(label: string | null): boolean {
-  if (!label || !refereePhone(label)) return false;
-  return consentEnv[label] !== "false";
+// Opted in = we have a real number and consent is on.
+export function isOptedInReferee(ref: Referee | null): boolean {
+  return !!ref && ref.consent && !!refereePhone(ref);
 }
 
 // The server can only send WhatsApp through the Cloud API, which needs all three.
@@ -39,8 +41,8 @@ export function whatsappConfigured(): boolean {
   );
 }
 
-export function canAutoSend(label: string | null): boolean {
-  return whatsappConfigured() && isOptedInReferee(label);
+export function canAutoSend(ref: Referee | null): boolean {
+  return whatsappConfigured() && isOptedInReferee(ref);
 }
 
 // The message that lands on the referee's phone. Must mirror the approved Meta
@@ -49,23 +51,22 @@ export function canAutoSend(label: string | null): boolean {
 // Template body to register in Meta (category Utility):
 //   🔥 Accountability alert from Ember. {{1}} committed to "{{2}}" and keeps
 //   dodging it. Your job: chase them to completion. No mercy.
-export function renderEscalation(item: Item): string {
-  const name = process.env.OWNER_NAME || "Jules";
-  return `🔥 Accountability alert from Ember. ${name} committed to "${item.title}" and keeps dodging it. Your job: chase them to completion. No mercy.`;
+export function renderEscalation(item: Item, ownerName: string): string {
+  return `🔥 Accountability alert from Ember. ${ownerName} committed to "${item.title}" and keeps dodging it. Your job: chase them to completion. No mercy.`;
 }
 
 // The one real side effect of M2: a message the owner did NOT have to tap to send.
 // Returns whether it landed and the rendered text, so the sweep can show the owner
 // exactly what went out (or fall back when not configured).
 export async function sendToReferee(
-  label: string,
-  item: Item
+  ref: Referee,
+  item: Item,
+  ownerName: string
 ): Promise<{ ok: boolean; rendered: string }> {
-  const rendered = renderEscalation(item);
-  const to = refereePhone(label);
-  if (!canAutoSend(label) || !to) return { ok: false, rendered };
+  const rendered = renderEscalation(item, ownerName);
+  const to = refereePhone(ref);
+  if (!canAutoSend(ref) || !to) return { ok: false, rendered };
 
-  const name = process.env.OWNER_NAME || "Jules";
   const url = `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`;
   try {
     const res = await fetch(url, {
@@ -85,7 +86,7 @@ export async function sendToReferee(
             {
               type: "body",
               parameters: [
-                { type: "text", text: name },
+                { type: "text", text: ownerName },
                 { type: "text", text: item.title },
               ],
             },

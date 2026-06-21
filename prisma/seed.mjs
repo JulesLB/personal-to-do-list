@@ -37,9 +37,18 @@ const items = [
   { title: "Pick the next restaurant with my wife", type: "parking", category: "personal", important: false },
 ];
 
-await prisma.item.deleteMany();
+// Reset and seed a single owner; deleting the user cascades items/referees/events.
+await prisma.user.deleteMany();
+const user = await prisma.user.create({
+  data: {
+    telegramChatId: "seed-owner",
+    name: "Jules",
+    referees: { create: [{ label: "wife" }, { label: "sister" }, { label: "colleague" }] },
+  },
+});
+
 const created = [];
-for (const it of items) created.push(await prisma.item.create({ data: it }));
+for (const it of items) created.push(await prisma.item.create({ data: { ...it, userId: user.id } }));
 
 // Completion history so the streak chip shows in the sandbox. A "done" Event on
 // each of the last 3 days = a 3-day streak (today is still open, so clearing

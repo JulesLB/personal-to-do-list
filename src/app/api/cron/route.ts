@@ -12,6 +12,6 @@ export async function GET(req: NextRequest) {
   }
   const slot: Slot = req.nextUrl.searchParams.get("slot") === "evening" ? "evening" : "morning";
   const result = await runSweep(slot);
-  // Don't echo chatId back; report only the safe counters.
-  return NextResponse.json({ sent: result.sent, topId: result.topId });
+  // Report only safe counters: how many users got a nudge, out of how many.
+  return NextResponse.json({ sent: result.sent, users: result.users });
 }

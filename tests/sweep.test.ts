@@ -1,34 +1,56 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { make } from "./factory";
-import type { Item } from "@prisma/client";
+import type { Item, Referee, User } from "@prisma/client";
 
 // runSweep talks straight to Prisma, so the DB is the only thing to stub. The
 // sender is injectable, so we pass a fake to capture sends without Telegram.
+// PRD-10: the sweep loops users, so user.findMany is stubbed too, and referees
+// come from the Referee table (referee.findUnique), not env vars.
 const db = vi.hoisted(() => ({
-  setting: { findUnique: vi.fn() },
+  user: { findMany: vi.fn() },
   item: { findMany: vi.fn(), update: vi.fn() },
   event: { create: vi.fn(), findFirst: vi.fn() },
+  referee: { findUnique: vi.fn() },
 }));
 
 vi.mock("../src/lib/db", () => ({ prisma: db }));
 
 import { runSweep } from "../src/lib/sweep";
 
-const overdue = (): Item => make({ id: 1, deadline: new Date(Date.now() - 86400000) });
-// Critical (3+ days overdue), important, with an opted-in referee.
+const USER: User = {
+  id: 1,
+  telegramChatId: "999",
+  name: "Jules",
+  email: null,
+  timezone: "Asia/Hong_Kong",
+  createdAt: new Date(),
+};
+
 const DAY = 86400000;
+const overdue = (): Item => make({ id: 1, deadline: new Date(Date.now() - DAY) });
+// Critical (3+ days overdue), important, with a referee assigned.
 const criticalWithReferee = (): Item =>
   make({ id: 1, title: "File taxes", deadline: new Date(Date.now() - 5 * DAY), referee: "wife" });
 
+// A referee row that is opted in: a real contact and consent on.
+const optedInRef: Referee = {
+  id: 1,
+  userId: 1,
+  label: "wife",
+  relation: null,
+  channel: "whatsapp",
+  contact: "+85291234567",
+  consent: true,
+  createdAt: new Date(),
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  db.setting.findUnique.mockResolvedValue({ key: "ownerChatId", value: "999" });
+  db.user.findMany.mockResolvedValue([USER]);
   db.item.update.mockResolvedValue(undefined);
   db.event.create.mockResolvedValue(undefined);
   db.event.findFirst.mockResolvedValue(null);
-  // A referee is only "opted in" with a real number; default it on for the
-  // escalation tests, off otherwise.
-  delete process.env.WIFE_WHATSAPP;
+  db.referee.findUnique.mockResolvedValue(null);
   delete process.env.WHATSAPP_TOKEN;
   delete process.env.WHATSAPP_PHONE_ID;
   delete process.env.WHATSAPP_TEMPLATE;
@@ -42,7 +64,7 @@ describe("runSweep", () => {
     const res = await runSweep("morning", send);
 
     expect(send).not.toHaveBeenCalled();
-    expect(res).toEqual({ sent: 0, chatId: "999", topId: null });
+    expect(res).toEqual({ sent: 0, users: 1 });
     // No accountability writes on a silent sweep.
     expect(db.item.update).not.toHaveBeenCalled();
     expect(db.event.create).not.toHaveBeenCalled();
@@ -65,16 +87,16 @@ describe("runSweep", () => {
     const res = await runSweep("morning", send);
 
     expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe("999"); // sent to the user's chat
     expect(res.sent).toBe(1);
-    expect(res.topId).toBe(1);
     // The pressing item gets its accountability memory bumped.
     expect(db.item.update).toHaveBeenCalledTimes(1);
     expect(db.event.create).toHaveBeenCalledTimes(1);
   });
 
   it("warns first when a critical item has an opted-in referee", async () => {
-    process.env.WIFE_WHATSAPP = "+85291234567";
     db.item.findMany.mockResolvedValue([criticalWithReferee()]);
+    db.referee.findUnique.mockResolvedValue(optedInRef);
     const send = vi.fn().mockResolvedValue(undefined);
 
     await runSweep("morning", send);
@@ -88,8 +110,8 @@ describe("runSweep", () => {
   });
 
   it("degrades to the one-tap draft past the warning when WhatsApp is unset", async () => {
-    process.env.WIFE_WHATSAPP = "+85291234567";
     db.item.findMany.mockResolvedValue([criticalWithReferee()]);
+    db.referee.findUnique.mockResolvedValue(optedInRef);
     // The warning already went out this cycle.
     db.event.findFirst.mockImplementation(({ where }: { where: { kind: string } }) =>
       Promise.resolve(where.kind === "escalation_warned" ? { id: 1 } : null)

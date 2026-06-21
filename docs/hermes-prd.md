@@ -296,7 +296,17 @@ Recommendation: ship the ladder with **Twilio SMS** as the auto-send channel, ke
 > This is the migration phase. The current code assumes one user everywhere: `ownerChatId` is the whole auth model, no row is scoped to a person, referees are env vars. None of that survives contact with a second user. Treat Phase 4 as a deliberate migration, not a sprinkle of `userId` columns.
 
 #### PRD-10 · Multi-user data model
-**Priority: P1 (for the multi-user goal) · Effort: L (~12–16h)**
+**Priority: P1 (for the multi-user goal) · Effort: L (~12–16h) · Status: BUILT (2026-06-21)**
+
+**Shipped.** `User` + `Referee` tables and `Item.userId` (both Prisma schemas), with a backfill
+migration ([20260621000000_multi_user_data_model](../prisma/migrations/20260621000000_multi_user_data_model/migration.sql))
+that parents existing items to Jules as user 1 and seeds his referee rows. The bot resolves-or-creates
+a user per Telegram chat ([src/lib/user.ts](../src/lib/user.ts), replacing the single-owner gate); the
+webhook, sweep (now loops all users), and board surfaces all scope by `userId`. Referees moved from env
+vars to the per-user table ([src/lib/referee.ts](../src/lib/referee.ts)); the classifier prompt is
+parameterized by name + referee labels. Cross-user id guessing is blocked via `updateMany`/`deleteMany`
+scoped by `userId`. Tests green (77). Migration applies on deploy. **Open signup** (any chat becomes a
+user) is intended for friends-and-family testing; abuse hardening is PRD-16.
 
 **Problem.** Every `Item` belongs implicitly to Jules. Referees are global env vars. A second user would see and trigger Jules's items.
 
@@ -317,7 +327,17 @@ Recommendation: ship the ladder with **Twilio SMS** as the auto-send channel, ke
 ---
 
 #### PRD-11 · Real authentication
-**Priority: P1 (multi-user) · Effort: L (~10–14h)**
+**Priority: P1 (multi-user) · Effort: L (~10–14h) · Status: BUILT (2026-06-21)**
+
+**Shipped.** Telegram-anchored sessions, not NextAuth. The session token now carries the `userId`
+(domain-separated HMAC in [src/lib/auth.ts](../src/lib/auth.ts)); the bot's `/board` command mints a
+short-lived login-link token, and opening `/login/<token>`
+([src/app/login/[token]/route.ts](../src/app/login/[token]/route.ts)) swaps it for a 30-day session
+cookie bound to that user. The board reads the session user ([src/lib/session.ts](../src/lib/session.ts))
+and scopes every page/action to them; the coach cache is namespaced per user. The shared-password login
+is kept as the owner's fast path (logs in as user 1). Token domain-separation is unit-tested
+(login link ≠ session ≠ referee). **Not done:** signup/onboarding UI for a brand-new user (PRD-12), and
+referee links still carry only a label, not a userId (a PRD-12/M2b follow-up).
 
 **Problem.** Board auth is one shared `APP_SECRET` cookie with no expiry, no identity (`middleware.ts`). Fine for one person, unusable for many.
 
@@ -343,6 +363,23 @@ Recommendation: ship the ladder with **Twilio SMS** as the auto-send channel, ke
 **Problem.** Hermes encodes Jules's referees, categories, and rules in a hardcoded system prompt (`classify.ts`). A new user has none of that.
 
 **Goal.** A short onboarding that captures who the user is, their referees and channels, quiet hours, and timezone, then personalizes the classifier.
+
+**The channel question is the headline decision (added 2026-06-21).** The hardest part of onboarding a
+normal friend/family tester is not the app — it's the messaging channel. Most people are on WhatsApp,
+not Telegram, and asking them to install a second app just to try Ember is where they drop off before
+they start. Note: testers never create their own bot or touch env vars — there is one shared Ember bot,
+and each chat becomes a user (PRD-10). So the only real friction is "do they have the app at all."
+Decision to make at build time:
+- **Telegram (current):** richer inline buttons (the snooze presets and Done/escalate keyboards depend
+  on them), free, already built. Worse adoption.
+- **WhatsApp (preferred for reach):** everyone has it, and the WhatsApp Cloud API plumbing is already
+  being stood up for referee escalation (M2 / PRD-6) — the same channel can *receive* inbound, not just
+  send. Costs: business-initiated messages need approved templates, buttons are more limited, inbound
+  needs its own webhook. More work, far better adoption.
+- Recommendation carried in from the planning session: build PRD-10/11 on Telegram (the multi-user
+  migration is channel-agnostic), then make "WhatsApp as the user capture channel" the first design call
+  of PRD-12, since it decides whether a non-technical person can onboard at all. Keep onboarding to a
+  two-minute, no-jargon flow.
 
 **Requirements.**
 - Bot- or web-driven onboarding: set name, timezone, referees (name, relation, channel, consent), and optionally tune the category set.

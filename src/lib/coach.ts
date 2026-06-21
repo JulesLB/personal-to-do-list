@@ -3,6 +3,7 @@ import { anthropic, MODELS } from "./anthropic";
 import { daysOverdue, commitmentDue, dueInLabel } from "./rank";
 import { triage, type TriageEvent } from "./triage";
 import { weeklyReceipts, type ReceiptEvent } from "./receipts";
+import { track, usageFromAnthropic } from "./usage";
 
 // The cached read. Three short beats the Review card renders top to bottom, plus
 // when it was made so the page can show "updated Xm ago". The shape mirrors how a
@@ -72,33 +73,41 @@ Voice (hard rules):
 - No praise padding, no generic productivity advice, no meta commentary about what you're saying.`;
 
 // Impure: the actual model call. Returns a fresh analysis stamped with now.
+// userId is for the cost log (the Refresh button passes it); omit it and nothing
+// is recorded.
 export async function generateAnalysis(
   items: Item[],
   events: { itemId: number; kind: string; createdAt: Date }[],
-  now: Date
+  now: Date,
+  userId?: number
 ): Promise<CoachAnalysis> {
-  const res = await anthropic.messages.create({
-    model: MODELS.classify,
-    max_tokens: 900,
-    system: SYSTEM,
-    messages: [{ role: "user", content: coachContext(items, events, now) }],
-    tools: [
-      {
-        name: "coach",
-        description: "Return the three-beat accountability read: the pattern, what to change, the one move.",
-        input_schema: {
-          type: "object",
-          properties: {
-            pattern: { type: "string", description: "1-2 sentences naming the habit, item by title" },
-            soWhat: { type: "string", description: "1-2 sentences on what to change about how he operates" },
-            doThis: { type: "string", description: "ONE sentence, one concrete move, task by title, no why" },
+  const res = await track(
+    { source: "coach", provider: "anthropic", model: MODELS.classify, userId },
+    () =>
+      anthropic.messages.create({
+        model: MODELS.classify,
+        max_tokens: 900,
+        system: SYSTEM,
+        messages: [{ role: "user", content: coachContext(items, events, now) }],
+        tools: [
+          {
+            name: "coach",
+            description: "Return the three-beat accountability read: the pattern, what to change, the one move.",
+            input_schema: {
+              type: "object",
+              properties: {
+                pattern: { type: "string", description: "1-2 sentences naming the habit, item by title" },
+                soWhat: { type: "string", description: "1-2 sentences on what to change about how he operates" },
+                doThis: { type: "string", description: "ONE sentence, one concrete move, task by title, no why" },
+              },
+              required: ["pattern", "soWhat", "doThis"],
+            },
           },
-          required: ["pattern", "soWhat", "doThis"],
-        },
-      },
-    ],
-    tool_choice: { type: "tool", name: "coach" },
-  });
+        ],
+        tool_choice: { type: "tool", name: "coach" },
+      }),
+    (r) => ({ usage: usageFromAnthropic(r.usage) })
+  );
 
   const block = res.content.find((b) => b.type === "tool_use");
   if (!block || block.type !== "tool_use") throw new Error("No analysis returned");

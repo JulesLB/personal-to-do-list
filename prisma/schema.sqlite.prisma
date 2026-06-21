@@ -12,8 +12,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id             Int       @id @default(autoincrement())
+  telegramChatId String    @unique
+  name           String?
+  email          String?
+  timezone       String    @default("Asia/Hong_Kong")
+  createdAt      DateTime  @default(now())
+  items          Item[]
+  referees       Referee[]
+  apiUsage       ApiUsage[]
+}
+
+model Referee {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  relation  String?
+  channel   String?  @default("whatsapp")
+  contact   String?
+  consent   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, label])
+  @@index([userId])
+}
+
 model Item {
   id           Int       @id @default(autoincrement())
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title        String
   type         String    @default("parking")
   important    Boolean   @default(true)
@@ -34,6 +63,8 @@ model Item {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   events       Event[]
+
+  @@index([userId])
 }
 
 model Event {
@@ -50,4 +81,39 @@ model Event {
 model Setting {
   key   String @id
   value String
+}
+
+// Mirror of ApiUsage in schema.prisma — keep in sync. See that file for intent.
+model ApiUsage {
+  id                Int      @id @default(autoincrement())
+  createdAt         DateTime @default(now())
+  source            String
+  provider          String
+  model             String
+  userId            Int?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  inputTokens       Int      @default(0)
+  outputTokens      Int      @default(0)
+  cacheReadTokens   Int      @default(0)
+  cacheCreateTokens Int      @default(0)
+  audioSeconds      Float    @default(0)
+  costUsd           Float    @default(0)
+  latencyMs         Int?
+  ok                Boolean  @default(true)
+  errorKind         String?
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([source])
+}
+
+// Mirror of LoginAttempt in schema.prisma — keep in sync. See src/lib/ratelimit.ts.
+model LoginAttempt {
+  id        Int      @id @default(autoincrement())
+  ip        String
+  kind      String
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ip, kind, createdAt])
 }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { verifyRefereeToken } from "@/lib/auth";
 import { sendMessage } from "@/lib/telegram";
 import { daysOverdue, commitmentDueLabel, deadlineLabel } from "@/lib/rank";
+import { ownerUser } from "@/lib/user";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,15 @@ export default async function RefereePage({
   }
 
   const now = new Date();
-  const overdue = (await prisma.item.findMany({ where: { status: "open", referee: label } }))
+  // PRD-10 bridge: the referee token carries only the label, so scope to the
+  // owner (first user). True multi-user referee links need the userId in the
+  // token — a PRD-11 / M2b follow-up.
+  const owner = await ownerUser();
+  const overdue = (
+    owner
+      ? await prisma.item.findMany({ where: { status: "open", referee: label, userId: owner.id } })
+      : []
+  )
     .filter((i) => i.type !== "parking" && daysOverdue(i, now) > 0)
     .sort((a, b) => daysOverdue(b, now) - daysOverdue(a, now));
 
@@ -44,18 +53,14 @@ export default async function RefereePage({
     const itemId = Number(formData.get("itemId"));
     const lbl = await verifyRefereeToken(tok, process.env.APP_SECRET ?? "");
     if (!lbl || !Number.isFinite(itemId)) return;
-    const item = await prisma.item.findUnique({ where: { id: itemId } });
+    const ownr = await ownerUser();
+    if (!ownr) return;
+    const item = await prisma.item.findFirst({ where: { id: itemId, userId: ownr.id } });
     if (!item || item.referee !== lbl || item.status !== "open") return;
-    const owner =
-      (await prisma.setting.findUnique({ where: { key: "ownerChatId" } }))?.value ??
-      process.env.OWNER_CHAT_ID ??
-      null;
-    if (owner) {
-      await sendMessage(
-        owner,
-        `👀 Your ${lbl} just poked you: "${item.title}" is overdue and they can see it. Get it done.`
-      );
-    }
+    await sendMessage(
+      ownr.telegramChatId,
+      `👀 Your ${lbl} just poked you: "${item.title}" is overdue and they can see it. Get it done.`
+    );
     await prisma.event.create({ data: { itemId, kind: "poked" } }).catch(() => {});
     redirect(`/referee/${tok}?poked=1`);
   }

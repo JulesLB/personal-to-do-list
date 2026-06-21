@@ -2,51 +2,66 @@ import type { Item } from "@prisma/client";
 import { prisma } from "./db";
 import { generateAnalysis, type CoachAnalysis } from "./coach";
 
-const KEY = "reviewAnalysis";
+// Per-user cache key (PRD-11): one read per user, so two users never see each
+// other's coaching. Legacy global "reviewAnalysis" rows simply go unread.
+const keyFor = (userId: number) => `reviewAnalysis:${userId}`;
 
 type Events = { itemId: number; kind: string; createdAt: Date }[];
 
-async function store(a: CoachAnalysis): Promise<void> {
+async function store(userId: number, a: CoachAnalysis): Promise<void> {
+  const key = keyFor(userId);
   const value = JSON.stringify(a);
-  await prisma.setting.upsert({ where: { key: KEY }, create: { key: KEY, value }, update: { value } });
+  await prisma.setting.upsert({ where: { key }, create: { key, value }, update: { value } });
 }
 
-// Read the cached read, generating one only if none exists yet. Freshness is the
-// user's call via the refresh button, so a page load never silently pays for an
-// API call (or its latency) on its own. A model/API failure degrades to null so
-// the page still renders — the coach card just doesn't show.
+// The coach is a weekly read, not a per-visit one: a cached analysis is reused
+// for 7 days, so switching to Review repeatedly costs no tokens. Once the cache is
+// older than a week (or missing / corrupt / old-shape) the next page load
+// regenerates it once and re-caches — so it stays current with your week without
+// you tapping anything. The Refresh button still forces a fresh one on demand. A
+// model/API failure degrades to null so the page still renders without the card.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 export async function loadAnalysis(
+  userId: number,
   items: Item[],
   events: Events,
   now: Date
 ): Promise<CoachAnalysis | null> {
-  const row = await prisma.setting.findUnique({ where: { key: KEY } });
+  const row = await prisma.setting.findUnique({ where: { key: keyFor(userId) } });
   if (row) {
     try {
       const a = JSON.parse(row.value) as Partial<CoachAnalysis>;
       // Only trust a cache in the current shape. An older read (read/plan/patterns)
       // parses fine but has none of these fields, so we regenerate instead of
       // rendering a blank card.
-      if (typeof a.pattern === "string" && typeof a.doThis === "string") {
-        return a as CoachAnalysis;
+      const validShape =
+        typeof a.pattern === "string" &&
+        typeof a.doThis === "string" &&
+        typeof a.generatedAt === "string";
+      if (validShape) {
+        const fresh = now.getTime() - new Date(a.generatedAt as string).getTime() < WEEK_MS;
+        if (fresh) return a as CoachAnalysis;
+        // older than a week: fall through and regenerate the weekly read
       }
     } catch {
       // fall through and regenerate over a corrupt cache
     }
   }
-  return forceAnalysis(items, events, now);
+  return forceAnalysis(userId, items, events, now);
 }
 
 // Regenerate on demand (the Refresh button / a future cron). Swallows failures so
 // a transient API error never throws inside a server action.
 export async function forceAnalysis(
+  userId: number,
   items: Item[],
   events: Events,
   now: Date
 ): Promise<CoachAnalysis | null> {
   try {
-    const a = await generateAnalysis(items, events, now);
-    await store(a);
+    const a = await generateAnalysis(items, events, now, userId);
+    await store(userId, a);
     return a;
   } catch {
     return null;

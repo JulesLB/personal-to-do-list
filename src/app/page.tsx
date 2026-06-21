@@ -6,6 +6,7 @@ import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
 import { currentStreak } from "@/lib/streak";
+import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +41,17 @@ export default async function Board() {
   // strict subset of allItems, so querying it separately was a wasted round trip.
   // We pull all events (not just done) so the weekly receipts can read snoozed /
   // promised too; the streak just filters to done in memory.
-  const [allItems, events] = await prisma.$transaction([
-    prisma.item.findMany(),
-    prisma.event.findMany({ select: { itemId: true, kind: true, createdAt: true } }),
-  ]);
+  // PRD-11: scope to the logged-in user (resolved from the signed session cookie).
+  const me = await currentUser();
+  const [allItems, events] = me
+    ? await prisma.$transaction([
+        prisma.item.findMany({ where: { userId: me.id } }),
+        prisma.event.findMany({
+          where: { item: { userId: me.id } },
+          select: { itemId: true, kind: true, createdAt: true },
+        }),
+      ])
+    : [[], []];
   const dones = events.filter((e) => e.kind === "done");
   const allOpen = allItems.filter((i) => i.status === "open");
   const streak = currentStreak(allItems, dones, now);

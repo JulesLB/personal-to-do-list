@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
-import { createRefereeToken } from "@/lib/auth";
+import { createRefereeToken, createLoginLinkToken } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
+import { resolveUser, refereeLabels } from "@/lib/user";
 
 export const dynamic = "force-dynamic";
 
@@ -16,33 +17,14 @@ const ok = () => NextResponse.json({ ok: true });
 const toDeadline = (d: string | null | undefined) =>
   d ? new Date(d + "T09:00:00+08:00") : null;
 
-// Single-user bot. The webhook secret only proves the request came from Telegram,
-// not which user sent it, so we lock the bot to one chat: trust the first chat that
-// talks to us (or OWNER_CHAT_ID if set), then refuse every other chat. Never
-// overwrite a known owner — that overwrite was how a stranger could read the list
-// and hijack the nudges. Returns false for an unauthorized chat.
-async function ensureOwner(chatId: number | string): Promise<boolean> {
-  const known =
-    (await prisma.setting.findUnique({ where: { key: "ownerChatId" } }))?.value ??
-    process.env.OWNER_CHAT_ID ??
-    null;
-  if (known) return String(chatId) === String(known);
-  // First contact and no owner configured: learn this chat as the owner.
-  await prisma.setting.upsert({
-    where: { key: "ownerChatId" },
-    update: { value: String(chatId) },
-    create: { key: "ownerChatId", value: String(chatId) },
-  });
-  return true;
-}
-
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
 
 // Completing a commitment honors the current cycle and resets its clock; it
-// stays open and resurfaces a cadence period later. Tasks close for good.
-async function completeItem(id: number): Promise<void> {
-  const item = await prisma.item.findUnique({ where: { id } });
+// stays open and resurfaces a cadence period later. Tasks close for good. Scoped
+// by userId so one chat can never complete another user's item by guessing its id.
+async function completeItem(id: number, userId: number): Promise<void> {
+  const item = await prisma.item.findFirst({ where: { id, userId } });
   if (!item) return;
   if (item.type === "commitment") {
     // A fresh cycle starts clean, so the push tally resets too.
@@ -70,11 +52,13 @@ export async function POST(req: NextRequest) {
 
   const update = await req.json().catch(() => null);
 
-  // Lock the bot to its owner before doing anything. A message and a callback
-  // carry the chat id in different places; reject any chat that isn't the owner.
+  // PRD-10: the chat is the identity. Resolve-or-create the user behind it (a
+  // message and a callback carry the chat id in different places), then scope
+  // every read and write to that user. Open signup for friends-and-family
+  // testing; abuse hardening (rate limits, allowlist) is PRD-16.
   const incomingChatId = update?.callback_query?.message?.chat?.id ?? update?.message?.chat?.id;
   if (!incomingChatId) return ok();
-  if (!(await ensureOwner(incomingChatId))) return ok();
+  const user = await resolveUser(incomingChatId);
 
   // Inline button taps from the daily nudge.
   const cb = update?.callback_query;
@@ -84,8 +68,8 @@ export async function POST(req: NextRequest) {
     if (snz && isSnoozePreset(snz[2])) {
       const id = Number(snz[1]);
       await prisma.item
-        .update({
-          where: { id },
+        .updateMany({
+          where: { id, userId: user.id },
           data: {
             snoozeUntil: snoozeUntil(snz[2], new Date()),
             lastNudgedAt: null,
@@ -102,21 +86,21 @@ export async function POST(req: NextRequest) {
     if (m) {
       const id = Number(m[2]);
       if (m[1] === "done") {
-        await completeItem(id).catch(() => {});
+        await completeItem(id, user.id).catch(() => {});
         await answerCallback(cb.id, "Done.");
       } else if (m[1] === "today") {
         // Record the promise. Deliberately not snoozed: the evening check is
         // supposed to find it still open and call out the broken promise.
         await prisma.item
-          .update({ where: { id }, data: { promisedAt: new Date() } })
+          .updateMany({ where: { id, userId: user.id }, data: { promisedAt: new Date() } })
           .catch(() => {});
         await logEvent(id, "promised");
         await answerCallback(cb.id, "On it today. I'll check tonight.");
       } else {
         const until = new Date(Date.now() + 86400000);
         await prisma.item
-          .update({
-            where: { id },
+          .updateMany({
+            where: { id, userId: user.id },
             data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
           })
           .catch(() => {});
@@ -139,7 +123,10 @@ export async function POST(req: NextRequest) {
   // Echo back what we heard so a bad transcription is visible before it acts.
   if (!text && msg?.voice?.file_id) {
     try {
-      text = await transcribeVoice(msg.voice.file_id);
+      text = await transcribeVoice(msg.voice.file_id, {
+        userId: user.id,
+        durationSeconds: typeof msg.voice.duration === "number" ? msg.voice.duration : 0,
+      });
     } catch {
       await sendMessage(chatId, "Couldn't make out that voice note. Try again or type it.");
       return ok();
@@ -160,11 +147,36 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
-    // Mint a referee link to forward. Owner-only (the whole webhook is), and the
-    // URL itself carries a signed token, so it's safe to hand to the referee.
-    const reflink = lower.match(/^\/?reflink\s+(wife|sister|colleague)/);
+    // Mint a one-time login link for the web board (PRD-11). The link carries a
+    // short-lived signed token bound to this user; opening it sets their session.
+    if (lower === "/board" || lower === "board" || lower === "/login" || lower === "login") {
+      const secret = process.env.APP_SECRET;
+      const base = process.env.APP_URL;
+      if (!secret || !base) {
+        await sendMessage(chatId, "Can't mint a board link: APP_SECRET or APP_URL isn't set.");
+        return ok();
+      }
+      const token = await createLoginLinkToken(user.id, secret);
+      await sendMessage(
+        chatId,
+        `Tap to open your board (the link works once and expires in 10 minutes):\n${base}/login/${token}`
+      );
+      return ok();
+    }
+
+    // Mint a referee link to forward. The URL carries a signed token, so it's safe
+    // to hand to the referee.
+    const reflink = lower.match(/^\/?reflink\s+(\w+)/);
     if (reflink) {
       const label = reflink[1];
+      const labels = await refereeLabels(user.id);
+      if (!labels.includes(label)) {
+        await sendMessage(
+          chatId,
+          `No referee called "${label}". You have: ${labels.join(", ") || "none set up"}.`
+        );
+        return ok();
+      }
       const secret = process.env.APP_SECRET;
       const base = process.env.APP_URL;
       if (!secret || !base) {
@@ -180,7 +192,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (lower === "list" || lower === "/list") {
-      const open = await prisma.item.findMany({ where: { status: "open" }, orderBy: { id: "asc" } });
+      const open = await prisma.item.findMany({
+        where: { status: "open", userId: user.id },
+        orderBy: { id: "asc" },
+      });
       if (!open.length) {
         await sendMessage(chatId, "Nothing open. Clean slate.");
         return ok();
@@ -198,7 +213,7 @@ export async function POST(req: NextRequest) {
     const done = lower.match(/^\/?done\s+(\d+)/);
     if (done) {
       const id = Number(done[1]);
-      await completeItem(id).catch(() => {});
+      await completeItem(id, user.id).catch(() => {});
       await sendMessage(chatId, `Done: #${id}.`);
       return ok();
     }
@@ -207,7 +222,10 @@ export async function POST(req: NextRequest) {
     if (retire) {
       const id = Number(retire[1]);
       await prisma.item
-        .update({ where: { id }, data: { status: "retired", doneAt: new Date() } })
+        .updateMany({
+          where: { id, userId: user.id },
+          data: { status: "retired", doneAt: new Date() },
+        })
         .catch(() => {});
       await sendMessage(chatId, `Retired #${id}. It won't resurface.`);
       return ok();
@@ -219,8 +237,8 @@ export async function POST(req: NextRequest) {
       const days = Number(snooze[2]);
       const until = new Date(Date.now() + days * 86400000);
       await prisma.item
-        .update({
-          where: { id },
+        .updateMany({
+          where: { id, userId: user.id },
           data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
         })
         .catch(() => {});
@@ -233,11 +251,11 @@ export async function POST(req: NextRequest) {
     if (due) {
       const id = Number(due[1]);
       const date = new Date(due[2] + "T09:00:00+08:00");
-      const cur = await prisma.item.findUnique({ where: { id } });
+      const cur = await prisma.item.findFirst({ where: { id, userId: user.id } });
       const pushedLater = !!cur?.deadline && date.getTime() > cur.deadline.getTime();
       await prisma.item
-        .update({
-          where: { id },
+        .updateMany({
+          where: { id, userId: user.id },
           data: {
             deadline: date,
             type: deriveType(date, cur?.cadence ?? null),
@@ -255,7 +273,7 @@ export async function POST(req: NextRequest) {
     // Freeform fallback: let Claude decide whether this creates a new item or
     // edits an existing one, and which. Exact commands above are the fast paths.
     const open = await prisma.item.findMany({
-      where: { status: "open" },
+      where: { status: "open", userId: user.id },
       orderBy: { id: "asc" },
     });
     const lite: OpenItemLite[] = open.map((i) => ({
@@ -268,7 +286,11 @@ export async function POST(req: NextRequest) {
     }));
     const openIds = new Set(open.map((i) => i.id));
 
-    const intent = await interpret(text, todayISO(), lite);
+    const intent = await interpret(text, todayISO(), lite, {
+      name: user.name ?? undefined,
+      refereeLabels: await refereeLabels(user.id),
+      userId: user.id,
+    });
     const f = intent.fields;
 
     // Mutations need a real, currently-open target. A missing or hallucinated
@@ -289,7 +311,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.action === "complete") {
-      await completeItem(intent.itemId!).catch(() => {});
+      await completeItem(intent.itemId!, user.id).catch(() => {});
       await sendMessage(chatId, intent.reply);
       return ok();
     }
@@ -317,7 +339,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.action === "update") {
-      const cur = await prisma.item.findUnique({ where: { id: intent.itemId! } });
+      const cur = await prisma.item.findFirst({ where: { id: intent.itemId!, userId: user.id } });
       const data: Record<string, unknown> = {};
       if (f.title !== undefined) data.title = f.title;
       if (f.category !== undefined) data.category = f.category;
@@ -355,6 +377,7 @@ export async function POST(req: NextRequest) {
     const newCadence = f.cadence ?? null;
     const item = await prisma.item.create({
       data: {
+        userId: user.id,
         title: f.title ?? text.slice(0, 80),
         type: deriveType(newDeadline, newCadence),
         category: f.category ?? null,

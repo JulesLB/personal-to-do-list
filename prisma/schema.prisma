@@ -8,8 +8,43 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// PRD-10: every Item, Referee, and Setting belongs to a User. A Telegram chat is
+// the identity anchor (telegramChatId), so the bot resolves-or-creates a user on
+// first contact. The board (PRD-11) reads a session bound to one of these users.
+model User {
+  id             Int       @id @default(autoincrement())
+  telegramChatId String    @unique
+  name           String?
+  email          String?
+  timezone       String    @default("Asia/Hong_Kong") // PRD-18 will honor this; crons stay HKT for now
+  createdAt      DateTime  @default(now())
+  items          Item[]
+  referees       Referee[]
+  apiUsage       ApiUsage[]
+}
+
+// PRD-10: per-user referees, replacing the WIFE_WHATSAPP / *_CONSENT env trio.
+// "label" is what the classifier and items reference (wife | sister | colleague,
+// or freeform); "channel" + "contact" are how a server auto-send reaches them.
+model Referee {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String // wife | sister | colleague | ...
+  relation  String?
+  channel   String?  @default("whatsapp") // whatsapp | sms | telegram
+  contact   String? // E.164 phone for whatsapp/sms
+  consent   Boolean  @default(true) // opted in for server auto-send
+  createdAt DateTime @default(now())
+
+  @@unique([userId, label])
+  @@index([userId])
+}
+
 model Item {
   id           Int       @id @default(autoincrement())
+  userId       Int
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title        String
   type         String    @default("parking") // derived from deadline/cadence: cadence=commitment, deadline=task, neither=parking
   important    Boolean   @default(true) // brain-owned (classifier); not user-editable
@@ -30,6 +65,8 @@ model Item {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   events       Event[]
+
+  @@index([userId])
 }
 
 // Append-only audit trail. The scoreboard (Phase 3) and escalation (Phase 2)
@@ -48,4 +85,47 @@ model Event {
 model Setting {
   key   String @id
   value String
+}
+
+// Back-office cost/telemetry log: one row per paid external call (Anthropic
+// classify + coach, OpenAI Whisper). Raw token counts are the source of truth so
+// cost is always recomputable; costUsd is a snapshot taken at write time so a
+// later price change can't rewrite history. userId is stamped when known (null
+// for the `try` CLI). latencyMs/ok/errorKind are captured now to seed the
+// monitoring panels that come after the cost view; the /admin dashboard reads it.
+model ApiUsage {
+  id                Int      @id @default(autoincrement())
+  createdAt         DateTime @default(now())
+  source            String // classify | coach | transcribe
+  provider          String // anthropic | openai
+  model             String
+  userId            Int?
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  inputTokens       Int      @default(0)
+  outputTokens      Int      @default(0)
+  cacheReadTokens   Int      @default(0)
+  cacheCreateTokens Int      @default(0)
+  audioSeconds      Float    @default(0)
+  costUsd           Float    @default(0)
+  latencyMs         Int?
+  ok                Boolean  @default(true)
+  errorKind         String?
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([source])
+}
+
+// Brute-force guard for the login routes. DB-backed (not in-memory) so the limit
+// holds across serverless instances, which each have their own memory. One row
+// per attempt, keyed by client IP + which login (admin | board); the limiter
+// counts recent failures in a window. See src/lib/ratelimit.ts.
+model LoginAttempt {
+  id        Int      @id @default(autoincrement())
+  ip        String
+  kind      String // admin | board
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ip, kind, createdAt])
 }

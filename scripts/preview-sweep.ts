@@ -15,12 +15,13 @@ const prisma = new PrismaClient();
 async function main() {
   const slot: Slot = process.argv[2] === "evening" ? "evening" : "morning";
 
-  // The sweep needs a nudge target. Use whatever's configured; otherwise stand
-  // up a temporary owner and tear it down after so a real one isn't clobbered.
-  const existing = await prisma.setting.findUnique({ where: { key: "ownerChatId" } });
-  const usingTemp = !existing && !process.env.OWNER_CHAT_ID;
-  if (usingTemp) {
-    await prisma.setting.create({ data: { key: "ownerChatId", value: "preview" } });
+  // The sweep loops users. If none exist locally, stand up a temporary one and
+  // tear it down after so a real one isn't clobbered.
+  const existing = await prisma.user.findFirst({ orderBy: { id: "asc" } });
+  let tempId: number | null = null;
+  if (!existing) {
+    const u = await prisma.user.create({ data: { telegramChatId: "preview", name: "Preview" } });
+    tempId = u.id;
   }
 
   const sent: { chatId: string | number; text: string; keyboard?: InlineKeyboard }[] = [];
@@ -34,29 +35,24 @@ async function main() {
 
   console.log(`=== ${slot} sweep (dry run) ===\n`);
 
-  const msg = sent[0];
-  if (!msg) {
-    console.log("(silent — nothing pressing)");
+  if (!sent.length) {
+    console.log("(silent — nothing pressing for any user)");
   } else {
-    console.log(msg.text);
-    console.log("\nButtons:");
-    console.log(JSON.stringify(msg.keyboard?.inline_keyboard ?? [], null, 2));
+    for (const msg of sent) {
+      console.log(`--- to chat ${msg.chatId} ---`);
+      console.log(msg.text);
+      if (msg.keyboard) {
+        console.log("\nButtons:");
+        console.log(JSON.stringify(msg.keyboard.inline_keyboard, null, 2));
+      }
+      console.log("");
+    }
   }
 
-  if (result.topId) {
-    const top = await prisma.item.findUnique({ where: { id: result.topId } });
-    console.log(`\nTop item #${top?.id} "${top?.title}"`);
-    console.log(`  nudgeCount   = ${top?.nudgeCount}`);
-    console.log(`  ignoreCount  = ${top?.ignoreCount}`);
-    console.log(`  lastNudgedAt = ${top?.lastNudgedAt?.toISOString() ?? "null"}`);
-  }
-
-  console.log(`\nSent to chat: ${result.chatId ?? "(none — set OWNER_CHAT_ID or message the bot)"}`);
+  console.log(`Users swept: ${result.users} · nudged: ${result.sent}`);
   console.log(`Events written this run: ${eventsAfter - eventsBefore}`);
 
-  if (usingTemp) {
-    await prisma.setting.delete({ where: { key: "ownerChatId" } });
-  }
+  if (tempId) await prisma.user.delete({ where: { id: tempId } });
   await prisma.$disconnect();
 }
 
