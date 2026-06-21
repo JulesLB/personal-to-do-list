@@ -15,19 +15,20 @@ async function store(userId: number, a: CoachAnalysis): Promise<void> {
 }
 
 // The coach is a weekly read, not a per-visit one: a cached analysis is reused
-// for 7 days, so switching to Review repeatedly costs no tokens. Once the cache is
-// older than a week (or missing / corrupt / old-shape) the next page load
-// regenerates it once and re-caches — so it stays current with your week without
-// you tapping anything. The Refresh button still forces a fresh one on demand. A
-// model/API failure degrades to null so the page still renders without the card.
+// for 7 days, so switching to Review repeatedly costs no tokens. A model/API
+// failure degrades to null so the page still renders without the card.
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function loadAnalysis(
+// Read the cache without ever blocking on the model. Returns whatever is cached
+// (even a week-stale read) plus whether it's due a regeneration. The page renders
+// instantly off this and schedules any regen with after(), so the multi-second
+// Haiku call never sits in the request's critical path — that wait was the lag
+// that made opening Review feel slow. The Refresh button still forces a fresh
+// read on demand.
+export async function readCachedAnalysis(
   userId: number,
-  items: Item[],
-  events: Events,
   now: Date
-): Promise<CoachAnalysis | null> {
+): Promise<{ analysis: CoachAnalysis | null; stale: boolean }> {
   const row = await prisma.setting.findUnique({ where: { key: keyFor(userId) } });
   if (row) {
     try {
@@ -41,14 +42,13 @@ export async function loadAnalysis(
         typeof a.generatedAt === "string";
       if (validShape) {
         const fresh = now.getTime() - new Date(a.generatedAt as string).getTime() < WEEK_MS;
-        if (fresh) return a as CoachAnalysis;
-        // older than a week: fall through and regenerate the weekly read
+        return { analysis: a as CoachAnalysis, stale: !fresh };
       }
     } catch {
-      // fall through and regenerate over a corrupt cache
+      // fall through: corrupt cache, treat as missing + stale
     }
   }
-  return forceAnalysis(userId, items, events, now);
+  return { analysis: null, stale: true };
 }
 
 // Regenerate on demand (the Refresh button / a future cron). Swallows failures so

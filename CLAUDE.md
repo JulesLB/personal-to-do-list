@@ -320,11 +320,13 @@ instead of listing what to do, and leans on three pure modules:
   — "Your read", the headline value: one Haiku call grounded in the real slipping items + week, returning
   three beats — `pattern` (the habit, item by title), `soWhat` (what to change), `doThis` (one move, one
   sentence). The prompt is held to the anti-AI voice spec (no banned words, no negative-parallelism
-  reframes). Cached per-user in `Setting` key `reviewAnalysis:<userId>` with a **7-day staleness window**:
-  `loadAnalysis` serves the cache for a week (so repeated Review visits cost no tokens), then the next page
-  load regenerates it once and re-caches, keeping the read current with your week. The **Refresh button**
-  (server action `refreshAnalysis`) still forces a fresh one on demand. So a model call happens at most
-  once a week per user from page loads, plus any manual refreshes — never per visit. The scoreboard numbers
+  reframes). Cached per-user in `Setting` key `reviewAnalysis:<userId>` with a **7-day staleness window**.
+  The page **never blocks on the model**: `readCachedAnalysis` returns whatever is cached (fresh or stale)
+  plus a `stale` flag, so the page renders instantly; when stale or missing it schedules `forceAnalysis`
+  via Next's `after()`, so the Haiku call runs after the response is sent (the next visit shows the fresh
+  read) instead of sitting in the request's critical path — that blocking call was what made opening Review
+  feel slow. The **Refresh button** (server action `refreshAnalysis`) still forces a fresh one on demand. So
+  a model call happens at most once a week per user from page loads, plus any manual refreshes — never per visit. The scoreboard numbers
   are pure DB math, recomputed live every load at no token cost. Degrades to no card on API failure; an
   old-shape cache regenerates.
 

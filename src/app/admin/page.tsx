@@ -24,7 +24,7 @@ const TOOLS: Record<string, { name: string; icon: string; desc: string }> = {
   coach: {
     name: "Weekly coach",
     icon: "🧭",
-    desc: "The Review page read — your week and slipping items, in three beats. Runs on Refresh.",
+    desc: "The Review page read of your week and slipping items, in three beats. Runs on Refresh.",
   },
   transcribe: {
     name: "Voice notes",
@@ -286,11 +286,11 @@ export default async function AdminCostPage() {
                         <td className={s.td}>
                           {meta.icon} {meta.name}
                         </td>
-                        <td className={s.td}>{r.userId ?? "—"}</td>
+                        <td className={s.td}>{r.userId ?? "·"}</td>
                         <td className={s.tdR}>{fmtInt(r.inputTokens)}</td>
                         <td className={s.tdR}>{fmtInt(r.outputTokens)}</td>
                         <td className={s.tdR}>{fmtInt(r.cacheReadTokens)}</td>
-                        <td className={s.tdR}>{r.latencyMs ?? "—"}</td>
+                        <td className={s.tdR}>{r.latencyMs ?? "·"}</td>
                         <td className={s.tdR}>{fmtUsd(r.costUsd)}</td>
                         <td className={s.td}>
                           <span className={r.ok ? s.dotOk : s.dotBad} title={r.ok ? "ok" : "error"} />

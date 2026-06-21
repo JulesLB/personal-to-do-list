@@ -4,7 +4,8 @@ import { prisma } from "@/lib/db";
 import { dueInLabel, commitmentDue, daysOverdue, isoHKT } from "@/lib/rank";
 import { triage, BUCKET_WEIGHT } from "@/lib/triage";
 import { weeklyReceipts } from "@/lib/receipts";
-import { loadAnalysis } from "@/lib/reviewAnalysis";
+import { readCachedAnalysis, forceAnalysis } from "@/lib/reviewAnalysis";
+import { after } from "next/server";
 import { waLink } from "@/lib/waLink";
 import { currentUser } from "@/lib/session";
 import { ReviewClient, type ReviewEntry } from "./ReviewClient";
@@ -42,7 +43,15 @@ export default async function Review() {
 
   const t = triage(open, events, now);
   const receipts = weeklyReceipts(allItems, events, now);
-  const analysis = me ? await loadAnalysis(me.id, allItems, events, now) : null;
+  // Read the coach card straight from cache so the page never waits on the model.
+  // If the cache is stale or missing, regenerate it after the response is sent
+  // (next visit shows the fresh read) instead of blocking this render on Haiku.
+  const { analysis, stale } = me
+    ? await readCachedAnalysis(me.id, now)
+    : { analysis: null, stale: false };
+  if (me && stale) {
+    after(() => forceAnalysis(me.id, allItems, events, now));
+  }
 
   // A flat count for the scoreboard: how many open items are already past due. It
   // cuts across buckets (an overdue item may also be dodged or escalated), so it's
