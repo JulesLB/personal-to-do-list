@@ -62,6 +62,46 @@ Postgres schema or prod. Orchestrated by [scripts/dev-local.mjs](scripts/dev-loc
 (Windows can't spawn a `.cmd`). Keep the two schemas' models in sync. After local work, any
 `npm run build` regenerates the Postgres client. Don't mix `db push` and migrate on the same DB.
 
+## Working on multiple features at once
+
+Default to **one branch per feature**, never on `main`. `main` stays deployable; each feature lives on
+its own branch and merges when it's done. The pain of "two features overwriting each other" almost
+always traces back to editing `main` directly with uncommitted work piling up, so the first move on any
+new feature is `git switch -c feat/<name>` before touching code.
+
+To work two features in parallel without stashing, use **git worktrees**: a second branch checked out
+into its own sibling folder, sharing the same repo and history.
+
+```bash
+git worktree add ../Ember-feat-B -b feat/B   # second branch in a sibling folder
+npm install                                   # once, in the new worktree
+npm run dev:local -- -p 3001                  # its own dev server + its own SQLite sandbox
+git worktree remove ../Ember-feat-B           # after it merges
+```
+
+Each worktree gets its **own isolated SQLite DB** through `npm run dev:local`
+([scripts/dev-local.mjs](scripts/dev-local.mjs)), so two features in two folders never share data and
+never touch prod. That covers UI, ranking, nudge, copy, and most logic work. Run two dev servers on
+different ports (`-p 3001`) and they stay fully independent.
+
+**Database isolation is the real constraint, not code.** Every checkout still points `DATABASE_URL` at
+the same cloud DB, and `npm run db:migrate` applies to **prod** (see the gotcha above), so two features
+that both edit [schema.prisma](prisma/schema.prisma) will collide no matter how branches are arranged.
+Rules of thumb:
+
+- **Schema-free feature:** Tier 0 is enough. Branch + worktree + the SQLite sandbox, zero extra infra.
+- **Two features changing the schema at the same time:** don't run both migrations against the shared
+  cloud DB. Prove each against the local SQLite schema first, then land them **one branch at a time**,
+  deploying the matching code in the same beat. If this becomes routine, that's the signal to add a
+  **branchable Postgres** (Supabase branching, since we're already on Supabase) so each branch gets its
+  own isolated Postgres with its own migrations. Build that only when the collision is real, not before.
+
+**Vercel preview deploys** (free on Hobby) give every pushed branch its own URL for testing on real
+serverless before merge. Note previews still read the prod DB via the shared env vars, so they're safe
+for UI/read-only features but not for schema work until branchable Postgres is in place.
+
+Run `npm test` and `npm run build` in each worktree before merging, same gate as always.
+
 ## Architecture
 
 The data model is deliberately one flat table. Everything else is functions over it.

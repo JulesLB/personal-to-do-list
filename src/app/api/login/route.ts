@@ -29,5 +29,5 @@ export async function POST(req: NextRequest) {
       return res;
     }
   }
-  return NextResponse.redirect(new URL("/login?error=1", req.url), 303);
+  return NextResponse.redirect(new URL("/get-started?error=1", req.url), 303);
 }

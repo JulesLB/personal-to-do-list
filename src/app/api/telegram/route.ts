@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMessage, answerCallback } from "@/lib/telegram";
+import { sendMessage, answerCallback, type InlineKeyboard } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
 import { createRefereeToken, createLoginLinkToken } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
@@ -27,6 +27,18 @@ const toDeadline = (d: string | null | undefined) =>
 
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
+
+// A one-tap "Open your board" button: a fresh, single-use login link bound to this
+// user. Attached to the welcome and /board so the dashboard is one tap from the
+// chat, no command to remember (the landing's get-started flow leans on this).
+// Returns undefined when APP_SECRET/APP_URL aren't set, so the message still sends.
+const boardLinkKeyboard = async (userId: number): Promise<InlineKeyboard | undefined> => {
+  const secret = process.env.APP_SECRET;
+  const base = process.env.APP_URL;
+  if (!secret || !base) return undefined;
+  const token = await createLoginLinkToken(userId, secret);
+  return { inline_keyboard: [[{ text: "Open your board →", url: `${base}/login/${token}` }]] };
+};
 
 // Completing a commitment honors the current cycle and resets its clock; it
 // stays open and resurfaces a cadence period later. Tasks close for good. Scoped
@@ -155,7 +167,13 @@ export async function POST(req: NextRequest) {
   try {
     if (lower === "/start" || lower === "start") {
       // A fresh chat gets the warm, one-ask welcome; everyone else a short pointer.
-      await sendMessage(chatId, isOnboarding(user) ? welcomeMessage(user.name) : returningMessage());
+      // Both carry a one-tap board button so the web dashboard is reachable straight
+      // from the first message (the get-started page on the landing relies on it).
+      await sendMessage(
+        chatId,
+        isOnboarding(user) ? welcomeMessage(user.name) : returningMessage(),
+        await boardLinkKeyboard(user.id)
+      );
       return ok();
     }
 
@@ -167,17 +185,12 @@ export async function POST(req: NextRequest) {
     // Mint a one-time login link for the web board (PRD-11). The link carries a
     // short-lived signed token bound to this user; opening it sets their session.
     if (lower === "/board" || lower === "board" || lower === "/login" || lower === "login") {
-      const secret = process.env.APP_SECRET;
-      const base = process.env.APP_URL;
-      if (!secret || !base) {
+      const kb = await boardLinkKeyboard(user.id);
+      if (!kb) {
         await sendMessage(chatId, "Can't mint a board link: APP_SECRET or APP_URL isn't set.");
         return ok();
       }
-      const token = await createLoginLinkToken(user.id, secret);
-      await sendMessage(
-        chatId,
-        `Tap to open your board (the link works once and expires in 10 minutes):\n${base}/login/${token}`
-      );
+      await sendMessage(chatId, "Here's your board. The button works once and expires in 10 minutes.", kb);
       return ok();
     }
 

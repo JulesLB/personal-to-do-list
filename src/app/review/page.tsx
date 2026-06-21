@@ -5,6 +5,7 @@ import { dueInLabel, commitmentDue, daysOverdue, isoHKT } from "@/lib/rank";
 import { triage, BUCKET_WEIGHT } from "@/lib/triage";
 import { weeklyReceipts } from "@/lib/receipts";
 import { readCachedAnalysis, forceAnalysis } from "@/lib/reviewAnalysis";
+import { coachReady, warmingMessage } from "@/lib/coach";
 import { after } from "next/server";
 import { waLink } from "@/lib/waLink";
 import { currentUser } from "@/lib/session";
@@ -43,13 +44,16 @@ export default async function Review() {
 
   const t = triage(open, events, now);
   const receipts = weeklyReceipts(allItems, events, now);
+  // Cold start: until there's real behavior to read, show generic encouragement
+  // and don't call the model at all (no fabricated "pattern", no wasted tokens).
+  const ready = coachReady(allItems, events, now);
+  const warming = ready ? null : warmingMessage(receipts.thisWeek.cleared, receipts.streak);
   // Read the coach card straight from cache so the page never waits on the model.
   // If the cache is stale or missing, regenerate it after the response is sent
   // (next visit shows the fresh read) instead of blocking this render on Haiku.
-  const { analysis, stale } = me
-    ? await readCachedAnalysis(me.id, now)
-    : { analysis: null, stale: false };
-  if (me && stale) {
+  const { analysis, stale } =
+    ready && me ? await readCachedAnalysis(me.id, now) : { analysis: null, stale: false };
+  if (ready && me && stale) {
     after(() => forceAnalysis(me.id, allItems, events, now));
   }
 
@@ -111,7 +115,13 @@ export default async function Review() {
         </Link>
       </header>
 
-      <ReviewClient entries={entries} receipts={receipts} analysis={analysis} overdue={overdue} />
+      <ReviewClient
+        entries={entries}
+        receipts={receipts}
+        analysis={analysis}
+        warming={warming}
+        overdue={overdue}
+      />
     </main>
   );
 }
