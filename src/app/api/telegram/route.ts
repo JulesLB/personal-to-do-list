@@ -7,6 +7,14 @@ import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
 import { resolveUser, refereeLabels } from "@/lib/user";
+import {
+  extractName,
+  isOnboarding,
+  welcomeMessage,
+  returningMessage,
+  orientationMessage,
+  helpMessage,
+} from "@/lib/onboarding";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +66,13 @@ export async function POST(req: NextRequest) {
   // testing; abuse hardening (rate limits, allowlist) is PRD-16.
   const incomingChatId = update?.callback_query?.message?.chat?.id ?? update?.message?.chat?.id;
   if (!incomingChatId) return ok();
-  const user = await resolveUser(incomingChatId);
+  // M5: harvest the first name Telegram already gives us, so the classifier can
+  // personalize without ever asking for it.
+  const incomingName = extractName(
+    update?.callback_query?.from ?? update?.message?.from,
+    update?.message?.chat
+  );
+  const user = await resolveUser(incomingChatId, { name: incomingName });
 
   // Inline button taps from the daily nudge.
   const cb = update?.callback_query;
@@ -139,11 +153,14 @@ export async function POST(req: NextRequest) {
   const lower = text.toLowerCase();
 
   try {
-    if (lower === "/start") {
-      await sendMessage(
-        chatId,
-        'Ember here. Text me anything and I log it. You can also edit in plain English: "push the dentist to Friday", "the gym thing is weekly", "drop the tax idea", "did the call". Commands still work: "list", "done <id>", "snooze <id> <days>", "due <id> YYYY-MM-DD", "retire <id>".'
-      );
+    if (lower === "/start" || lower === "start") {
+      // A fresh chat gets the warm, one-ask welcome; everyone else a short pointer.
+      await sendMessage(chatId, isOnboarding(user) ? welcomeMessage(user.name) : returningMessage());
+      return ok();
+    }
+
+    if (lower === "/help" || lower === "help") {
+      await sendMessage(chatId, helpMessage());
       return ok();
     }
 
@@ -318,7 +335,10 @@ export async function POST(req: NextRequest) {
 
     if (intent.action === "retire") {
       await prisma.item
-        .update({ where: { id: intent.itemId! }, data: { status: "retired", doneAt: new Date() } })
+        .updateMany({
+          where: { id: intent.itemId!, userId: user.id },
+          data: { status: "retired", doneAt: new Date() },
+        })
         .catch(() => {});
       await sendMessage(chatId, intent.reply);
       return ok();
@@ -328,8 +348,8 @@ export async function POST(req: NextRequest) {
       const days = intent.snoozeDays ?? 1;
       const until = new Date(Date.now() + days * 86400000);
       await prisma.item
-        .update({
-          where: { id: intent.itemId! },
+        .updateMany({
+          where: { id: intent.itemId!, userId: user.id },
           data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
         })
         .catch(() => {});
@@ -365,7 +385,9 @@ export async function POST(req: NextRequest) {
         !!newDeadline &&
         newDeadline.getTime() > cur.deadline.getTime();
       if (pushedLater) data.deferCount = { increment: 1 };
-      await prisma.item.update({ where: { id: intent.itemId! }, data }).catch(() => {});
+      await prisma.item
+        .updateMany({ where: { id: intent.itemId!, userId: user.id }, data })
+        .catch(() => {});
       if (pushedLater) await logEvent(intent.itemId!, "snoozed");
       await sendMessage(chatId, intent.reply);
       return ok();
@@ -397,6 +419,14 @@ export async function POST(req: NextRequest) {
         (f.deadline ? ` · by ${f.deadline}` : "") +
         (item.referee ? ` · ${item.referee}` : "")
     );
+    // M5: the first captured item is the activation event. Send the one-time
+    // orientation and close out onboarding. (Referee step parked; it will sit here.)
+    if (isOnboarding(user)) {
+      await prisma.user
+        .update({ where: { id: user.id }, data: { onboardingStep: "done" } })
+        .catch(() => {});
+      await sendMessage(chatId, orientationMessage());
+    }
     return ok();
   } catch {
     await sendMessage(chatId, "Hmm, that one broke. Try rephrasing.");

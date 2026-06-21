@@ -17,6 +17,11 @@ model User {
   name           String?
   email          String?
   timezone       String    @default("Asia/Hong_Kong") // PRD-18 will honor this; crons stay HKT for now
+  // M5 first-run activation: "new" until the first captured item, then "done".
+  // Defaults to "done" so the migration backfills existing users past onboarding;
+  // resolveUser stamps "new" only on genuinely fresh chats. The referee beat (parked)
+  // will slot an intermediate step in here.
+  onboardingStep String   @default("done")
   createdAt      DateTime  @default(now())
   items          Item[]
   referees       Referee[]

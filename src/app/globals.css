@@ -676,6 +676,57 @@ details.band[open] > summary.band-head::after {
   box-shadow: var(--shadow);
 }
 
+/* First-run orientation: shown only when the board is genuinely empty. The empty
+   list is the onboarding — one primary action, the loop explained in a line,
+   self-collapsing the moment an item lands. */
+.firstrun {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 34px 26px;
+  text-align: center;
+  margin-bottom: 22px;
+  box-shadow: var(--shadow);
+}
+.firstrun-title {
+  margin: 0 0 8px;
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+}
+.firstrun-lede {
+  margin: 0 auto 20px;
+  max-width: 46ch;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.firstrun-hint {
+  margin: 16px auto 0;
+  max-width: 46ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+.add-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  padding: 0 22px;
+  font-size: 15px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--burn);
+  border: 1px solid var(--burn-2);
+  border-radius: 11px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.add-cta:hover {
+  background: var(--burn-2);
+}
+
 /* Edit modal */
 .modal-backdrop {
   position: fixed;

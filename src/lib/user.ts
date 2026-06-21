@@ -3,24 +3,37 @@ import type { User } from "@prisma/client";
 
 // PRD-10: a Telegram chat is the identity anchor. The bot resolves-or-creates the
 // user behind a chat on first contact, replacing the old single-owner gate.
-export async function resolveUser(chatId: number | string): Promise<User> {
+// M5: the chat payload's first name is harvested here so the classifier can
+// personalize without ever asking; a genuinely new chat is stamped "new" so it
+// gets the guided first run (existing users default to "done" via the schema).
+export async function resolveUser(
+  chatId: number | string,
+  profile: { name?: string } = {}
+): Promise<User> {
   const tg = String(chatId);
+  const name = profile.name?.trim() || undefined;
   const existing = await prisma.user.findUnique({ where: { telegramChatId: tg } });
-  if (existing) return existing;
+  if (existing) {
+    // Backfill a missing name once we learn it; never overwrite a set one.
+    if (name && !existing.name) {
+      return prisma.user.update({ where: { id: existing.id }, data: { name } });
+    }
+    return existing;
+  }
   // Reconcile the migration placeholder: if the backfilled owner still carries
   // the "pending-owner" stand-in (i.e. no ownerChatId was set at migration time),
   // adopt this chat into it so the backfilled items keep their owner instead of
-  // spawning a second account.
+  // spawning a second account. This is an existing user, so leave onboarding done.
   const placeholder = await prisma.user.findUnique({
     where: { telegramChatId: "pending-owner" },
   });
   if (placeholder) {
     return prisma.user.update({
       where: { id: placeholder.id },
-      data: { telegramChatId: tg },
+      data: { telegramChatId: tg, ...(name && !placeholder.name ? { name } : {}) },
     });
   }
-  return prisma.user.create({ data: { telegramChatId: tg } });
+  return prisma.user.create({ data: { telegramChatId: tg, name, onboardingStep: "new" } });
 }
 
 // Board bridge until PRD-11 gives the board a real per-user session: the first

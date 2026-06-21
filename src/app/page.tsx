@@ -253,9 +253,27 @@ export default async function Board() {
             <BurnButton id={hero.item.id} variant="hero" />
           </div>
         </section>
+      ) : allItems.length === 0 ? (
+        // First run: the empty list is the onboarding. One primary action, the
+        // loop explained in a line, no wizard. Self-collapsing the moment an item
+        // lands. The urgency bands and streak teach themselves once there's content.
+        <section className="firstrun">
+          <h1 className="firstrun-title">
+            {me?.name ? `Welcome, ${me.name}.` : "Welcome to Ember."}
+          </h1>
+          <p className="firstrun-lede">
+            This is your board: the things you keep putting off, ranked by what is most pressing.
+            Add one and Ember nudges you until it is done.
+          </p>
+          <AddItem variant="cta" />
+          <p className="firstrun-hint">
+            Or just text the bot, it is faster. Ember pings you morning and night only when something
+            is actually due, and stays quiet otherwise.
+          </p>
+        </section>
       ) : (
         <section className="empty-state">
-          Nothing on the list. Text the bot to add something.
+          Nothing pressing. Text the bot to add something.
         </section>
       )}
 
