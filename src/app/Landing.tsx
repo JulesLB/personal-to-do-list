@@ -74,14 +74,14 @@ export function Landing() {
               <h3 className="lp-how-h">Text it, even messy</h3>
               <p className="lp-how-p">
                 Message Ember like you would text a friend, or send a voice note. It reads the mess and turns
-                it into a clean, dated task, with a referee if you name one.
+                it into a clean, dated task, with an accountability partner if you name one.
               </p>
             </div>
             <div className="lp-how-art">
               <div className="lp-snip">
                 <div className="lp-bubble lp-bubble-me">buy a card for my wife&apos;s birthday tue, tell her</div>
                 <div className="lp-bubble lp-bubble-bot">
-                  Created &lsquo;Buy a card for my wife&apos;s birthday&rsquo; due Tue 23 Jun, wife as referee 🎂
+                  Created &lsquo;Buy a card for my wife&apos;s birthday&rsquo; due Tue 23 Jun, wife as partner 🎂
                   <span className="lp-bubble-meta">#62 · task · personal · by 2026-06-23</span>
                 </div>
               </div>
@@ -92,10 +92,10 @@ export function Landing() {
             <div className="lp-howbox-text">
               <span className="lp-how-chip">📊</span>
               <span className="lp-how-num">Step 2</span>
-              <h3 className="lp-how-h">It ranks the list and nags you</h3>
+              <h3 className="lp-how-h">It shows what&apos;s urgent and pushes you to finish</h3>
               <p className="lp-how-p">
-                The nearest deadline sits on top, always, so the overdue dentist call beats the tax return due
-                next week. Morning and night, Ember pings you, but only when something is actually due.
+                Your board and the Telegram bot keep you on the hook for what you said you&apos;d deliver. The
+                most urgent item sits on top, and Ember pings you morning and night until it is done.
               </p>
             </div>
             <div className="lp-how-art">
@@ -139,7 +139,7 @@ export function Landing() {
             <div className="lp-howbox-text">
               <span className="lp-how-chip">🤝</span>
               <span className="lp-how-num">Step 3</span>
-              <h3 className="lp-how-h">Name a referee Ember can call in</h3>
+              <h3 className="lp-how-h">Name an accountability partner Ember can call in</h3>
               <p className="lp-how-p">
                 Pick someone, your partner, your sister, a colleague. Stall too long and Ember texts them what
                 you have been dodging. The consequence a to-do list can never give you.

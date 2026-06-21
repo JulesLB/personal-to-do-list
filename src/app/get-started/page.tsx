@@ -3,19 +3,15 @@ import Link from "next/link";
 // The single funnel + re-entry page (there's no separate login page). It walks a
 // new person onto Telegram and their board, and doubles as where a logged-out
 // board visit lands. Ember's identity is the Telegram chat, so there's no web
-// signup and no password: the bot mints a private one-tap board link. The owner
-// access-key (APP_SECRET shortcut) lives behind a disclosure at the bottom.
+// signup and no password: the bot mints a private one-tap board link. The owner's
+// APP_SECRET fast path is intentionally not exposed here (owner-only, not for end
+// users) — sign in as the owner via the Telegram /board link, same as anyone.
 const TELEGRAM_INSTALL = "https://telegram.org/";
 const TELEGRAM_WEB = "https://web.telegram.org/";
 
 export const metadata = { title: "Get started with Ember" };
 
-export default async function GetStarted({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const sp = await searchParams;
+export default async function GetStarted() {
   const bot = process.env.TELEGRAM_BOT_URL ?? TELEGRAM_INSTALL;
 
   return (
@@ -83,19 +79,6 @@ export default async function GetStarted({
             </div>
           </li>
         </ol>
-
-        <details className="lp-ownerkey">
-          <summary>Owner access key</summary>
-          <p className="lp-ownerkey-note">
-            A shortcut for the owner only. Normal users get in through Telegram above, there is nothing to
-            enter here.
-          </p>
-          <form action="/api/login" method="post" className="lp-ownerkey-form">
-            <input name="key" type="password" placeholder="access key" autoComplete="current-password" />
-            <button type="submit">Enter</button>
-          </form>
-          {sp?.error ? <p className="lp-ownerkey-err">Wrong key.</p> : null}
-        </details>
       </section>
     </div>
   );
