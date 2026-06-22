@@ -16,6 +16,12 @@ export function hktMonthStart(now: Date): Date {
   return new Date(Date.UTC(hk.getUTCFullYear(), hk.getUTCMonth(), 1) - HK_OFFSET);
 }
 
+// Start of the trailing 7-day window (today + 6 prior days), HKT. Matches how the
+// weekly receipts count "this week".
+export function hktWeekStart(now: Date): Date {
+  return new Date(hktDayStart(now).getTime() - 6 * DAY);
+}
+
 // Cost is tiny (fractions of a cent), so 4 decimals keeps a single call visible
 // instead of rounding it to $0.00.
 export function fmtUsd(n: number | null | undefined): string {

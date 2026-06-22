@@ -8,13 +8,22 @@
   min-height: 100vh;
 }
 
-/* Header: Ember logo + wordmark + dashboard title, centered across the page. */
+/* Header: Ember logo + wordmark hard left, dashboard title centered across the
+   page (1fr / auto / 1fr keeps the title centered regardless of the brand width). */
 .header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-bottom: 28px;
+}
+.brandGroup {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 10px;
-  margin-bottom: 28px;
+  justify-self: start;
+}
+.headerSpacer {
+  justify-self: end;
 }
 .logo {
   border-radius: 9px;
@@ -263,4 +272,32 @@
   color: #9aa0b0;
   font-size: 13px;
   padding: 14px 4px;
+}
+
+/* Recent-calls disclosure: the rest of the log behind a tap. */
+.more {
+  margin-top: 4px;
+}
+.moreSummary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  border-top: 1px solid #f1f2f6;
+  user-select: none;
+}
+.moreSummary::-webkit-details-marker {
+  display: none;
+}
+.moreSummary::before {
+  content: "▸ ";
+  color: #9aa0b0;
+}
+.more[open] > .moreSummary::before {
+  content: "▾ ";
+}
+.moreSummary:hover {
+  color: #2a2f40;
 }
