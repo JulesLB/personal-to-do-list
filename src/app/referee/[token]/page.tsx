@@ -21,7 +21,10 @@ export default async function RefereePage({
 }) {
   const { token } = await params;
   const sp = await searchParams;
-  const label = await verifyRefereeToken(token, process.env.APP_SECRET ?? "");
+  // Fail closed: with no APP_SECRET there's no real signing key, so refuse rather
+  // than verify against an empty key (which would accept forged tokens).
+  const secret = process.env.APP_SECRET;
+  const label = secret ? await verifyRefereeToken(token, secret) : null;
 
   if (!label) {
     return (
@@ -51,7 +54,8 @@ export default async function RefereePage({
     "use server";
     const tok = String(formData.get("token") ?? "");
     const itemId = Number(formData.get("itemId"));
-    const lbl = await verifyRefereeToken(tok, process.env.APP_SECRET ?? "");
+    const sec = process.env.APP_SECRET;
+    const lbl = sec ? await verifyRefereeToken(tok, sec) : null;
     if (!lbl || !Number.isFinite(itemId)) return;
     const ownr = await ownerUser();
     if (!ownr) return;

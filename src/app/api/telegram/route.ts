@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback, type InlineKeyboard } from "@/lib/telegram";
 import { interpret, type OpenItemLite } from "@/lib/classify";
-import { createRefereeToken, createLoginLinkToken } from "@/lib/auth";
+import { createRefereeToken, createLoginLinkToken, passwordMatches } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType } from "@/lib/rank";
-import { resolveUser, refereeLabels } from "@/lib/user";
+import { resolveUser, refereeLabels, isOwnerUser } from "@/lib/user";
+import { botRateLimited, recordBotMessage } from "@/lib/ratelimit";
+import { overMonthlyBudget } from "@/lib/usage";
+import { clampTitle, normalizeCategory } from "@/lib/validate";
 import {
   extractName,
   isOnboarding,
@@ -65,8 +68,11 @@ async function completeItem(id: number, userId: number): Promise<void> {
 }
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-telegram-bot-api-secret-token");
-  if (secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+  // Constant-time check of the Telegram webhook secret (HMAC both sides, then a
+  // constant-time compare) so the secret can't leak through response timing.
+  const provided = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!expected || !(await passwordMatches(provided, expected))) {
     return new NextResponse("unauthorized", { status: 401 });
   }
 
@@ -142,6 +148,26 @@ export async function POST(req: NextRequest) {
   const msg = update?.message;
   const chatId = msg?.chat?.id;
   if (!chatId) return ok();
+
+  // Cost guard (PRD-16): every message can trigger a paid Claude/Whisper call and
+  // signup is open, so non-owner chats get two limits — a per-window message rate
+  // limit and a hard monthly spend cap (MONTHLY_BUDGET_USD). The owner (Jules) is
+  // exempt from both so testing isn't throttled. Button taps (callbacks above) are
+  // cheap and not counted.
+  if (!(await isOwnerUser(user.id, chatId))) {
+    if (await botRateLimited(chatId)) {
+      await sendMessage(chatId, "Easy there — too many messages at once. Give it a few minutes.");
+      return ok();
+    }
+    await recordBotMessage(chatId);
+    if (await overMonthlyBudget(user.id)) {
+      await sendMessage(
+        chatId,
+        "You've used up this month's free Ember usage. It resets at the start of next month — your board still works in the meantime."
+      );
+      return ok();
+    }
+  }
 
   let text: string = (msg?.text ?? "").trim();
 
@@ -374,8 +400,8 @@ export async function POST(req: NextRequest) {
     if (intent.action === "update") {
       const cur = await prisma.item.findFirst({ where: { id: intent.itemId!, userId: user.id } });
       const data: Record<string, unknown> = {};
-      if (f.title !== undefined) data.title = f.title;
-      if (f.category !== undefined) data.category = f.category;
+      if (f.title !== undefined) data.title = clampTitle(f.title);
+      if (f.category !== undefined) data.category = normalizeCategory(f.category);
       if (f.important !== undefined) data.important = f.important;
       // Deadline and cadence drive the derived type; recompute it from the values
       // that will be in place after this edit.
@@ -413,9 +439,9 @@ export async function POST(req: NextRequest) {
     const item = await prisma.item.create({
       data: {
         userId: user.id,
-        title: f.title ?? text.slice(0, 80),
+        title: clampTitle(f.title ?? text) || text.slice(0, 80),
         type: deriveType(newDeadline, newCadence),
-        category: f.category ?? null,
+        category: normalizeCategory(f.category),
         important: f.important ?? true,
         deadline: newDeadline,
         referee: f.referee ?? null,

@@ -1,6 +1,8 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "./db";
 import { generateAnalysis, type CoachAnalysis } from "./coach";
+import { overMonthlyBudget } from "./usage";
+import { isOwnerUser } from "./user";
 
 // Per-user cache key (PRD-11): one read per user, so two users never see each
 // other's coaching. Legacy global "reviewAnalysis" rows simply go unread.
@@ -59,6 +61,10 @@ export async function forceAnalysis(
   events: Events,
   now: Date
 ): Promise<CoachAnalysis | null> {
+  // Honor the monthly spend cap here too: the coach is a paid call, so a
+  // non-owner who's hit their cap doesn't get a fresh read (the page falls back to
+  // whatever's cached). The owner is exempt, same as the bot.
+  if (!(await isOwnerUser(userId)) && (await overMonthlyBudget(userId, now))) return null;
   try {
     const a = await generateAnalysis(items, events, now, userId);
     await store(userId, a);

@@ -3,6 +3,10 @@ import { runSweep, type Slot } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 
+// This is a GET that mutates state (sends nudges, writes Events) because Vercel
+// Cron only issues GET requests. It's safe despite the method: the Bearer secret
+// below is required, so a prefetch / image tag / CSRF can't supply it and trigger
+// the sweep. The secret, not the HTTP verb, is the control here.
 export async function GET(req: NextRequest) {
   // Fail closed: a missing CRON_SECRET must lock the endpoint, not open it.
   const secret = process.env.CRON_SECRET;

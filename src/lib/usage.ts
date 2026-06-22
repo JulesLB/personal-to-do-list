@@ -1,9 +1,36 @@
 import { prisma } from "./db";
 import { modelCostUsd, type Usage } from "./pricing";
+import { hktMonthStart } from "./costs";
 
 // The three things in the app that cost money.
 export type UsageSource = "classify" | "coach" | "transcribe";
 export type Provider = "anthropic" | "openai";
+
+// Per-user monthly spend cap. Signup is open, so a single user can't be allowed to
+// run the bill up without limit: once their logged cost this (HKT) month crosses
+// this, the bot stops making paid calls for them until the month rolls over. The
+// owner is exempt (see isOwnerUser) so testing isn't throttled.
+export const MONTHLY_BUDGET_USD = 3;
+
+// Sum a user's logged cost for the current HKT month. Cheap aggregate over the
+// indexed ApiUsage table. Fails to 0 on a DB error so a hiccup never wrongly locks
+// a user out of the bot (the rate limit is still in force as a second guard).
+export async function monthlySpendUsd(userId: number, now: Date = new Date()): Promise<number> {
+  try {
+    const since = hktMonthStart(now);
+    const agg = await prisma.apiUsage.aggregate({
+      where: { userId, createdAt: { gte: since } },
+      _sum: { costUsd: true },
+    });
+    return agg._sum.costUsd ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function overMonthlyBudget(userId: number, now: Date = new Date()): Promise<boolean> {
+  return (await monthlySpendUsd(userId, now)) >= MONTHLY_BUDGET_USD;
+}
 
 type Meta = {
   source: UsageSource;

@@ -9,6 +9,13 @@ const MAX_FAILURES = 8; // failures within the window before lockout
 
 export type LoginKind = "admin" | "board";
 
+// Bot abuse guard: every inbound Telegram message can trigger a paid Claude/
+// Whisper call, and signup is open, so a per-chat ceiling stops one chat from
+// running up the bill. Reuses the LoginAttempt table (its `ip` column holds the
+// chat id, kind = "bot"); counts ALL messages in the window, not just failures.
+const BOT_WINDOW_MS = 15 * 60 * 1000;
+const BOT_MAX_MESSAGES = 40; // messages per chat per window before we hold off
+
 // Vercel sets x-forwarded-for; take the first hop (the real client). Falls back
 // so a missing header can't throw — the password is still the real gate.
 export function clientIp(req: Request): string {
@@ -40,6 +47,38 @@ export async function recordAttempt(
 ): Promise<void> {
   try {
     await prisma.loginAttempt.create({ data: { ip, kind, success } });
+  } catch {
+    // intentionally silent
+  }
+}
+
+// True when this chat has sent too many messages in the window. Fails OPEN on a
+// DB error so a hiccup never blackholes a real user's messages.
+export async function botRateLimited(chatId: string | number): Promise<boolean> {
+  try {
+    const since = new Date(Date.now() - BOT_WINDOW_MS);
+    const count = await prisma.loginAttempt.count({
+      where: { ip: String(chatId), kind: "bot", createdAt: { gte: since } },
+    });
+    return count >= BOT_MAX_MESSAGES;
+  } catch {
+    return false;
+  }
+}
+
+// Record one inbound bot message for the rate window. Best-effort. Only the last
+// window matters for the count, so older rows are dead weight; purge them ~2% of
+// the time to keep the table bounded without a delete on every message.
+export async function recordBotMessage(chatId: string | number): Promise<void> {
+  try {
+    await prisma.loginAttempt.create({
+      data: { ip: String(chatId), kind: "bot", success: true },
+    });
+    if (Math.random() < 0.02) {
+      await prisma.loginAttempt
+        .deleteMany({ where: { kind: "bot", createdAt: { lt: new Date(Date.now() - BOT_WINDOW_MS) } } })
+        .catch(() => {});
+    }
   } catch {
     // intentionally silent
   }
