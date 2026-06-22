@@ -12,7 +12,7 @@ async function main() {
   console.log(`=== ${slot} nudge text ===\n`);
   console.log(nudge ? nudge.text : "(no nudge — stays silent)");
   console.log("\n=== Buttons ===");
-  console.log(JSON.stringify(nudge?.keyboard.inline_keyboard ?? [], null, 2));
+  console.log(JSON.stringify(nudge?.keyboard?.inline_keyboard ?? [], null, 2));
 
   await prisma.$disconnect();
 }

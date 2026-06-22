@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { sendMessage, type InlineKeyboard } from "./telegram";
 import { buildDailyNudge, type Slot } from "./nudge";
-import { isCritical } from "./rank";
+import { isCritical, startOfDayHKT } from "./rank";
 import { escalationStep, type EscalationStep } from "./escalate";
 import { getReferee, isOptedInReferee, canAutoSend, sendToReferee } from "./referee";
 import type { Item, Referee, User } from "@prisma/client";
@@ -39,6 +39,16 @@ async function escalationFor(
   });
 }
 
+// Did this user complete anything today (HKT)? Drives the evening "well done"
+// note: with nothing left pending, a done event today means they cleared the
+// day rather than never having anything due.
+async function clearedSomethingToday(userId: number, now: Date): Promise<boolean> {
+  const done = await prisma.event.findFirst({
+    where: { kind: "done", createdAt: { gte: startOfDayHKT(now) }, item: { userId } },
+  });
+  return !!done;
+}
+
 // The channel the sweep sends through. Defaults to Telegram; the preview script
 // injects a no-op that captures the message so it can dry-run against a local DB.
 export type Sender = (
@@ -63,27 +73,28 @@ async function sweepUser(
   const nudge = buildDailyNudge(live, now, slot);
   // Both slots stay silent when nothing is pressing. A ping on a quiet day teaches
   // the user to swipe the bot away unread, spending the trust the nudge depends
-  // on. The "clean slate" win moves to the weekly receipts (M3).
-  if (!nudge) return false;
-
-  // Decide whether this nudge also pulls the referee in, before we send so the
-  // warning rides along in the same message.
-  const top = live.find((i) => i.id === nudge.topId)!;
-  const ref = await getReferee(user.id, top.referee);
-  const step = await escalationFor(top, now, ref);
-  const willSend = step === "send" && canAutoSend(ref);
-  const ownerName = user.name || "Your friend";
-
-  let text = nudge.text;
-  if (step === "warn") {
-    text += `\n\nLast warning. Tap it, or next time I message your ${top.referee} myself.`;
-  } else if (step === "send" && !willSend) {
-    // The rung says send, but WhatsApp isn't wired up. Degrade to the one-tap
-    // draft already on the keyboard rather than going silent or lying.
-    text += `\n\nI'd message your ${top.referee} now, but WhatsApp auto-send isn't set up. Tap the button to send it yourself.`;
+  // on. The one exception: the evening wrap-up cheers a day where things were due
+  // and you cleared them all (positive reinforcement, not an empty-state ping).
+  if (!nudge) {
+    if (slot === "evening" && (await clearedSomethingToday(user.id, now))) {
+      await send(user.telegramChatId, "Well done. You cleared everything due today. 🔥");
+      return true;
+    }
+    return false;
   }
 
-  await send(user.telegramChatId, text, nudge.keyboard);
+  const top = live.find((i) => i.id === nudge.topId)!;
+
+  // Referee escalation (the warning copy plus the auto "Tell <referee>" send) is
+  // paused until WhatsApp auto-send is configured. Flip this flag to bring it
+  // back; the ladder, the warning text, and the keyboard button return together.
+  const ESCALATION_ENABLED: boolean = false;
+  const ref = ESCALATION_ENABLED ? await getReferee(user.id, top.referee) : null;
+  const step: EscalationStep = ESCALATION_ENABLED ? await escalationFor(top, now, ref) : "none";
+  const willSend = ESCALATION_ENABLED && step === "send" && canAutoSend(ref);
+  const ownerName = user.name || "Your friend";
+
+  await send(user.telegramChatId, nudge.text, nudge.keyboard);
 
   // Accountability memory: a re-nudge of a still-open item means the last nudge
   // was ignored (done and snooze remove an item; a kept promise gets marked done).

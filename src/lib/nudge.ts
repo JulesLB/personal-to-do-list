@@ -1,15 +1,10 @@
-import type { InlineKeyboard } from "./telegram";
-import { waLink } from "./waLink";
+import type { InlineButton, InlineKeyboard } from "./telegram";
 import {
   rankActionable,
   deadlineLabel,
   cadenceLabel,
   commitmentDueLabel,
-  heatOf,
   daysOverdue,
-  isCritical,
-  promisedToday,
-  deferState,
   CATEGORIES,
   type Category,
 } from "./rank";
@@ -18,93 +13,49 @@ import type { Item } from "@prisma/client";
 const DOT = "·";
 const BULLET = "•";
 
-type Tier = "calm" | "push" | "escalate";
+// At most this many items per section. Three overdue + three due today keeps the
+// message scannable and the evening tick grid inside Telegram's comfortable size.
+// Everything past the cap rolls into a "+N more" line; nothing below "due today"
+// (future, back burner, parking) shows at all.
+const SECTION_CAP = 3;
+
 export type Slot = "morning" | "evening";
+export type DailyNudge = { text: string; keyboard?: InlineKeyboard; topId: number };
 
 const catLabel = (c: string | null) =>
   c && c in CATEGORIES ? CATEGORIES[c as Category].label : null;
 
-// "calm" = top of the list, nothing on fire. "push" = burning, due today or
-// just past. "escalate" = ignored long enough to call in the referee.
-function tierOf(it: Item, now: Date): Tier {
-  if (isCritical(it, now)) return "escalate";
-  if (heatOf(it, now) === "burning") return "push";
-  return "calm";
-}
-
-export type DailyNudge = { text: string; keyboard: InlineKeyboard; topId: number };
-
-function escalationDraft(it: Item, now: Date): string {
-  if (it.type === "commitment") {
-    const cad = cadenceLabel(it.cadence);
-    return `Accountability check: I committed to "${it.title}"${cad ? ` (${cad})` : ""} and I've let it slide. Calling it out so you hold me to it.`;
-  }
-  const when = deadlineLabel(it.deadline, now) ?? "a while back";
-  return `Accountability check: I said I'd "${it.title}" (${when}) and I haven't. Calling it out so you hold me to it.`;
-}
-
-// One-line meta under a title: category, when, cadence, referee.
-function metaLine(it: Item, now: Date, withReferee: boolean): string {
+// One-line meta under a title: category, when, cadence.
+function metaLine(it: Item, now: Date): string {
   return [
     catLabel(it.category),
     it.type === "commitment" ? commitmentDueLabel(it, now) : deadlineLabel(it.deadline, now),
     it.type === "commitment" ? cadenceLabel(it.cadence) : null,
-    withReferee && it.referee ? `referee: ${it.referee}` : null,
   ]
     .filter(Boolean)
     .join(` ${DOT} `);
 }
 
-function onDeck(it: Item, now: Date): string {
-  const meta = metaLine(it, now, false);
-  return `${BULLET} ${it.title}${meta ? ` ${DOT} ${meta}` : ""}`;
+function lineItem(it: Item, now: Date, marker: string): string {
+  const meta = metaLine(it, now);
+  return `${marker} ${it.title}${meta ? ` ${DOT} ${meta}` : ""}`;
 }
 
-function brokenPromiseHeader(it: Item): string {
-  const jab = it.referee ? `Tell your ${it.referee} or get it done.` : `Own it before bed.`;
-  return `Morning-you promised "${it.title}" today. Evening-you hasn't. ${jab}`;
+// "3 overdue, 2 due today" / "2 overdue" / "2 due today".
+function summary(overdue: number, today: number): string {
+  const parts: string[] = [];
+  if (overdue) parts.push(`${overdue} overdue`);
+  if (today) parts.push(`${today} due today`);
+  return parts.join(", ");
 }
 
-function header(it: Item, tier: Tier, slot: Slot, now: Date, broken: boolean): string {
-  if (broken) return brokenPromiseHeader(it);
-  if (tier === "escalate") {
-    if (it.type === "commitment") {
-      return it.referee
-        ? `You've let "${it.title}" slide. Time to tell your ${it.referee}.`
-        : `You've let "${it.title}" slide. Own it today.`;
-    }
-    const n = daysOverdue(it, now);
-    const lead = `Your #1 is ${n} day${n === 1 ? "" : "s"} overdue.`;
-    return it.referee ? `${lead} Time to tell your ${it.referee}.` : `${lead} Call it in.`;
-  }
-  if (tier === "push") {
-    if (slot === "evening") return "Evening check. Your #1 is still open.";
-    return it.type === "commitment" ? `You're overdue on "${it.title}".` : "Your #1 is burning.";
-  }
-  return slot === "evening" ? "Still on the list tonight." : "Top of the list today.";
-}
-
-function buttons(it: Item, tier: Tier, now: Date, broken: boolean): InlineKeyboard {
-  const done = { text: "✓ Done", callback_data: `done:${it.id}` };
-  const today = { text: "I'll do it today", callback_data: `today:${it.id}` };
-  const link = waLink(it.referee, escalationDraft(it, now));
-  const tell = link && it.referee ? { text: `Tell ${it.referee}`, url: link } : null;
-
-  if (broken || tier === "escalate") {
-    // Referee goes first: the point is the social cost, not the checkbox.
-    return { inline_keyboard: [tell ? [tell, done, today] : [done, today]] };
-  }
-  if (tier === "push") {
-    return { inline_keyboard: [tell ? [done, today, tell] : [done, today]] };
-  }
-  // calm: nothing's on fire, so offer to defer with intent.
-  const snooze = [
-    { text: "Tonight", callback_data: `snz:${it.id}:tonight` },
-    { text: "Tomorrow", callback_data: `snz:${it.id}:tomorrow` },
-    { text: "Weekend", callback_data: `snz:${it.id}:weekend` },
-    { text: "Next wk", callback_data: `snz:${it.id}:nextweek` },
-  ];
-  return { inline_keyboard: [[done], snooze] };
+// Morning is a plain preview of the day (no buttons — you don't tick in the
+// morning, you plan). Evening is the wrap-up: numbered list + a tick grid.
+function header(slot: Slot, overdue: number, today: number): string {
+  const sum = summary(overdue, today);
+  return slot === "evening"
+    ? `That was today. Still pending: ${sum}.`
+    : `Morning. ${sum}.`;
 }
 
 export function buildDailyNudge(
@@ -112,38 +63,42 @@ export function buildDailyNudge(
   now: Date,
   slot: Slot = "morning"
 ): DailyNudge | null {
-  const ranked = rankActionable(items, now);
-  if (!ranked.length) return null;
+  const ranked = rankActionable(items, now).map((r) => r.item);
+  const overdue = ranked.filter((it) => daysOverdue(it, now) > 0);
+  const today = ranked.filter((it) => daysOverdue(it, now) === 0);
+  if (!overdue.length && !today.length) return null;
 
-  let it = ranked[0].item;
-  let broken = false;
+  const shownOverdue = overdue.slice(0, SECTION_CAP);
+  const shownToday = today.slice(0, SECTION_CAP);
+  const shown = [...shownOverdue, ...shownToday];
+  const evening = slot === "evening";
 
-  if (slot === "evening") {
-    // A promise you made this morning and still haven't kept wins the evening,
-    // even if it isn't the top-ranked item. That's the one that gets attitude.
-    const promise = ranked.find((r) => promisedToday(r.item, now));
-    if (promise) {
-      it = promise.item;
-      broken = true;
-    } else if (tierOf(ranked[0].item, now) === "calm") {
-      // Otherwise the evening is just an honesty check: stay quiet if nothing
-      // is actually pressing.
-      return null;
-    }
-  }
+  // Evening numbers each line (1..N) so a compact "✓ N" button maps to its row;
+  // morning just bullets them.
+  let counter = 0;
+  const section = (icon: string, label: string, list: Item[], total: number): string => {
+    const lines = list.map((it) => lineItem(it, now, evening ? `${++counter}.` : BULLET));
+    let s = `${icon} ${label} (${total})\n${lines.join("\n")}`;
+    const extra = total - list.length;
+    if (extra > 0) s += `\n+${extra} more`;
+    return s;
+  };
 
-  const tier = tierOf(it, now);
-  const label = broken ? "Still open" : "#1";
-  const meta = metaLine(it, now, true);
-  let text = `${header(it, tier, slot, now, broken)}\n\n${label} ${DOT} ${it.title}`;
-  if (meta) text += `\n${meta}`;
-  // Hold up a mirror once you've shoved this away more than once. A single
-  // postpone shows on the board but stays out of the nudge.
-  const pushed = deferState(it);
-  if (pushed && pushed.count >= 2) text += `\nYou've pushed this ${pushed.count} times. Careful.`;
+  let text = header(slot, overdue.length, today.length);
+  const blocks: string[] = [];
+  if (shownOverdue.length) blocks.push(section("🔴", "Overdue", shownOverdue, overdue.length));
+  if (shownToday.length) blocks.push(section("📅", "Due today", shownToday, today.length));
+  text += `\n\n${blocks.join("\n\n")}`;
 
-  const next = ranked.filter((r) => r.item.id !== it.id).slice(0, 2);
-  if (next.length) text += `\n\nWhat's next\n${next.map((r) => onDeck(r.item, now)).join("\n")}`;
+  const topId = shown[0].id;
+  if (!evening) return { text, topId };
 
-  return { text, keyboard: buttons(it, tier, now, broken), topId: it.id };
+  // A grid of numbered ticks, three per row. Tapping one burns that item.
+  const rows: InlineButton[][] = [];
+  shown.forEach((it, i) => {
+    const btn: InlineButton = { text: `✓ ${i + 1}`, callback_data: `done:${it.id}` };
+    if (i % 3 === 0) rows.push([btn]);
+    else rows[rows.length - 1].push(btn);
+  });
+  return { text, keyboard: { inline_keyboard: rows }, topId };
 }

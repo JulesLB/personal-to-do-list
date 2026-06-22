@@ -26,7 +26,7 @@ export const CATEGORIES: Record<Category, { label: string; dot: string }> = {
 // server timezone (Vercel runs UTC) so "due today" never drifts by a day.
 const HK_OFFSET = 8 * 60 * 60 * 1000;
 
-const startOfDayHKT = (d: Date) =>
+export const startOfDayHKT = (d: Date) =>
   new Date(Math.floor((d.getTime() + HK_OFFSET) / DAY) * DAY - HK_OFFSET);
 
 export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
