@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { hktDayStart, hktMonthStart, fmtUsd, fmtInt, fmtWhenHKT } from "@/lib/costs";
+import { hktDayStart, hktMonthStart, hktWeekStart, fmtUsd, fmtInt, fmtWhenHKT } from "@/lib/costs";
 import s from "./dashboard.module.css";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,11 @@ const TOOLS: Record<string, { name: string; icon: string; desc: string }> = {
 };
 
 type Summary = {
+  totalUsers: number;
+  newUsersWeek: number;
+  activeToday: number;
+  capturedWeek: number;
+  doneWeek: number;
   today: number;
   month: number;
   all: number;
@@ -64,14 +69,39 @@ async function loadSummary(now: Date): Promise<Summary | null> {
   try {
     const dayStart = hktDayStart(now);
     const monthStart = hktMonthStart(now);
+    const weekStart = hktWeekStart(now);
 
-    const [today, month, all, bySource, byProvider, recent] = await Promise.all([
+    const [
+      today,
+      month,
+      all,
+      bySource,
+      byProvider,
+      recent,
+      totalUsers,
+      newUsersWeek,
+      activeRows,
+      capturedWeek,
+      doneWeek,
+    ] = await Promise.all([
       prisma.apiUsage.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: SUM }),
       prisma.apiUsage.aggregate({ where: { createdAt: { gte: monthStart } }, _sum: SUM }),
       prisma.apiUsage.aggregate({ _sum: SUM }),
       prisma.apiUsage.groupBy({ by: ["source"], _sum: { costUsd: true }, _count: { _all: true } }),
       prisma.apiUsage.groupBy({ by: ["provider"], _sum: { costUsd: true }, _count: { _all: true } }),
       prisma.apiUsage.findMany({ orderBy: { createdAt: "desc" }, take: 25 }),
+      prisma.user.count(),
+      prisma.user.count({ where: { createdAt: { gte: weekStart } } }),
+      // Active today = distinct users who messaged the bot today (every message
+      // hits classify, which logs an ApiUsage row). Board-only visits don't log,
+      // so this reads as "messaged the bot today", not all engagement.
+      prisma.apiUsage.findMany({
+        where: { createdAt: { gte: dayStart }, userId: { not: null } },
+        distinct: ["userId"],
+        select: { userId: true },
+      }),
+      prisma.item.count({ where: { createdAt: { gte: weekStart } } }),
+      prisma.event.count({ where: { kind: "done", createdAt: { gte: weekStart } } }),
     ]);
 
     const allInput = all._sum.inputTokens ?? 0;
@@ -80,6 +110,11 @@ async function loadSummary(now: Date): Promise<Summary | null> {
     const allCacheCreate = all._sum.cacheCreateTokens ?? 0;
 
     return {
+      totalUsers,
+      newUsersWeek,
+      activeToday: activeRows.length,
+      capturedWeek,
+      doneWeek,
       today: today._sum.costUsd ?? 0,
       month: month._sum.costUsd ?? 0,
       all: all._sum.costUsd ?? 0,
@@ -107,14 +142,59 @@ async function loadSummary(now: Date): Promise<Summary | null> {
 
 function Header() {
   return (
-    <>
-      <div className={s.header}>
+    <div className={s.header}>
+      <div className={s.brandGroup}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="Ember" width={32} height={32} className={s.logo} />
         <h1 className={s.brand}>Ember</h1>
-        <span className={s.dashTitle}>Operational Dashboard</span>
       </div>
-    </>
+      <span className={s.dashTitle}>Operational Dashboard</span>
+      <span aria-hidden className={s.headerSpacer} />
+    </div>
+  );
+}
+
+function RecentTable({ rows }: { rows: Summary["recent"] }) {
+  return (
+    <div className={s.tableScroll}>
+      <table className={s.table}>
+        <thead>
+          <tr>
+            <th className={s.th}>When (HKT)</th>
+            <th className={s.th}>Tool</th>
+            <th className={s.th}>User</th>
+            <th className={s.thR}>In</th>
+            <th className={s.thR}>Out</th>
+            <th className={s.thR}>Cache</th>
+            <th className={s.thR}>ms</th>
+            <th className={s.thR}>Cost</th>
+            <th className={s.th}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const meta = TOOLS[r.source] ?? { name: r.source, icon: "⚙️", desc: "" };
+            return (
+              <tr key={r.id} className={s.tr}>
+                <td className={s.td}>{fmtWhenHKT(r.createdAt)}</td>
+                <td className={s.td}>
+                  {meta.icon} {meta.name}
+                </td>
+                <td className={s.td}>{r.userId ?? "·"}</td>
+                <td className={s.tdR}>{fmtInt(r.inputTokens)}</td>
+                <td className={s.tdR}>{fmtInt(r.outputTokens)}</td>
+                <td className={s.tdR}>{fmtInt(r.cacheReadTokens)}</td>
+                <td className={s.tdR}>{r.latencyMs ?? "·"}</td>
+                <td className={s.tdR}>{fmtUsd(r.costUsd)}</td>
+                <td className={s.td}>
+                  <span className={r.ok ? s.dotOk : s.dotBad} title={r.ok ? "ok" : "error"} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -143,8 +223,39 @@ export default async function AdminCostPage() {
     <main className={s.page}>
       <Header />
 
-      {/* Headline numbers */}
-      <div className={s.kpis}>
+      {/* Users & activity */}
+      <section className={s.section}>
+        <div className={s.sectionTitle}>👥 Users & activity</div>
+        <div className={s.kpis}>
+          <div className={s.kpi}>
+            <span className={s.kpiIcon}>👤</span>
+            <div className={s.kpiLabel}>Total users</div>
+            <div className={s.kpiValue}>{fmtInt(data.totalUsers)}</div>
+            <div className={s.kpiSub}>{fmtInt(data.newUsersWeek)} new this week</div>
+          </div>
+          <div className={s.kpi}>
+            <span className={s.kpiIcon}>🟢</span>
+            <div className={s.kpiLabel}>Active today</div>
+            <div className={s.kpiValue}>{fmtInt(data.activeToday)}</div>
+            <div className={s.kpiSub}>messaged the bot</div>
+          </div>
+          <div className={s.kpi}>
+            <span className={s.kpiIcon}>✍️</span>
+            <div className={s.kpiLabel}>Items captured this week</div>
+            <div className={s.kpiValue}>{fmtInt(data.capturedWeek)}</div>
+          </div>
+          <div className={s.kpi}>
+            <span className={s.kpiIcon}>✅</span>
+            <div className={s.kpiLabel}>Items done this week</div>
+            <div className={s.kpiValue}>{fmtInt(data.doneWeek)}</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Cost & tokens */}
+      <section className={s.section}>
+        <div className={s.sectionTitle}>💸 Cost & tokens</div>
+        <div className={s.kpis}>
         <div className={s.kpi}>
           <span className={s.kpiIcon}>🕒</span>
           <div className={s.kpiLabel}>Today</div>
@@ -166,7 +277,8 @@ export default async function AdminCostPage() {
           <div className={s.kpiValue}>{fmtInt(data.tokensAll)}</div>
           <div className={s.kpiSub}>{cacheShare}% served from cache</div>
         </div>
-      </div>
+        </div>
+      </section>
 
       {/* Per-tool breakdown */}
       <section className={s.section}>
@@ -251,57 +363,25 @@ export default async function AdminCostPage() {
         </div>
       </section>
 
-      {/* Recent calls */}
+      {/* Recent calls — first 3 always visible, the rest behind a disclosure */}
       <section className={s.section}>
         <div className={s.sectionTitle}>🧾 Recent calls</div>
         <div className={s.card}>
-          <div className={s.tableScroll}>
-            <table className={s.table}>
-              <thead>
-                <tr>
-                  <th className={s.th}>When (HKT)</th>
-                  <th className={s.th}>Tool</th>
-                  <th className={s.th}>User</th>
-                  <th className={s.thR}>In</th>
-                  <th className={s.thR}>Out</th>
-                  <th className={s.thR}>Cache</th>
-                  <th className={s.thR}>ms</th>
-                  <th className={s.thR}>Cost</th>
-                  <th className={s.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent.length === 0 ? (
-                  <tr>
-                    <td className={s.td} colSpan={9}>
-                      <span className={s.empty}>No calls logged yet.</span>
-                    </td>
-                  </tr>
-                ) : (
-                  data.recent.map((r) => {
-                    const meta = TOOLS[r.source] ?? { name: r.source, icon: "⚙️", desc: "" };
-                    return (
-                      <tr key={r.id} className={s.tr}>
-                        <td className={s.td}>{fmtWhenHKT(r.createdAt)}</td>
-                        <td className={s.td}>
-                          {meta.icon} {meta.name}
-                        </td>
-                        <td className={s.td}>{r.userId ?? "·"}</td>
-                        <td className={s.tdR}>{fmtInt(r.inputTokens)}</td>
-                        <td className={s.tdR}>{fmtInt(r.outputTokens)}</td>
-                        <td className={s.tdR}>{fmtInt(r.cacheReadTokens)}</td>
-                        <td className={s.tdR}>{r.latencyMs ?? "·"}</td>
-                        <td className={s.tdR}>{fmtUsd(r.costUsd)}</td>
-                        <td className={s.td}>
-                          <span className={r.ok ? s.dotOk : s.dotBad} title={r.ok ? "ok" : "error"} />
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          {data.recent.length === 0 ? (
+            <p className={s.empty}>No calls logged yet.</p>
+          ) : (
+            <>
+              <RecentTable rows={data.recent.slice(0, 3)} />
+              {data.recent.length > 3 ? (
+                <details className={s.more}>
+                  <summary className={s.moreSummary}>
+                    Show {data.recent.length - 3} more
+                  </summary>
+                  <RecentTable rows={data.recent.slice(3)} />
+                </details>
+              ) : null}
+            </>
+          )}
         </div>
       </section>
     </main>
