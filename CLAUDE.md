@@ -178,15 +178,17 @@ important item with no date falls to parking and rots, so anything important sho
 model called anywhere in the app.
 
 **Telegram webhook** ([src/app/api/telegram/route.ts](src/app/api/telegram/route.ts)) — the main
-input surface. Handles inline button callbacks (`done:`/`today:`/`snooze:<id>`, plus
-`snz:<id>:<preset>` for the snooze presets) and typed commands (`list`, `done <id>`,
+input surface. Handles inline button callbacks (`done:` from the nudge; the `today:`/`snooze:<id>` /
+`snz:<id>:<preset>` handlers are kept for compatibility but the digest no longer emits those buttons)
+and typed commands (`list`, `done <id>`,
 `snooze <id> <days>`, `due <id> YYYY-MM-DD`, `retire <id>`) via regex as fast paths; anything else
 goes to `interpret`, which decides create vs. edit and dispatches (create/update/complete/snooze/
 retire/query/clarify). A mutation with a missing or hallucinated target falls back to asking rather
 than touching the wrong item; every change is echoed back. `done` routes through `completeItem`
-(commitment-aware, see above) and logs a `done` Event; `today:` sets `promisedAt` (deliberately *not*
-a snooze, so the evening sweep can catch it still open) and logs `promised`. Deadlines are stored at
-`09:00 HKT` (`T09:00:00+08:00`).
+(commitment-aware, see above), logs a `done` Event, and — when the tap came from the evening nudge —
+**re-renders the digest in place** via `editMessageText` so the burned item drops out and a hidden
+overflow item surfaces. (The legacy `today:` set `promisedAt`; it and `snooze` still work as handlers
+but the digest doesn't surface them.) Deadlines are stored at `09:00 HKT` (`T09:00:00+08:00`).
 **Voice notes** are a second input: a message with no text but a `voice.file_id` is downloaded and
 transcribed by `transcribeVoice` ([src/lib/voice.ts](src/lib/voice.ts)) via OpenAI Whisper
 (`whisper-1`, the only non-Anthropic model call, keyed by `OPENAI_API_KEY`), the transcript is echoed
@@ -199,21 +201,29 @@ from Telegram; then `resolveUser(chatId)` maps the chat to its user and **all qu
 Telegram-link login.
 
 **Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
-pure (items → text + keyboard + topId) and imports no DB/Telegram, so it's unit-tested directly.
-`runSweep(slot)` in [src/lib/sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper the cron
-calls: it reads the DB, sends the message, and writes accountability memory (bumps `nudgeCount`,
-bumps `ignoreCount` when it re-nudges an item that's still open, appends a `nudged` Event). Two
-slots, and **both stay silent when nothing is pressing** — there is no empty-state "clean slate"
-ping, since a notification on a quiet day just teaches you to swipe the bot away unread (the win
-moves to the weekly receipts, M3). When something *is* pressing, pressure has three tiers — `calm` (Done + a row of
-snooze presets: tonight/tomorrow/weekend/next week, see [src/lib/snooze.ts](src/lib/snooze.ts)),
-`push` (burning: Done / I'll-do-it-today / Tell referee), `escalate` (task 3+ days overdue or
-commitment past 2 cadence cycles: referee button goes *first*, copy turns blunt). If you tapped
-"I'll do it today" and it's still open that evening, the evening nudge leads with a broken-promise
-line. The "Tell <referee>" button is a `wa.me` deep link ([src/lib/waLink.ts](src/lib/waLink.ts),
-which rejects numbers under 8 digits so a placeholder can't render a dead link) with a pre-drafted
-message. Escalation is always one-tap, never auto-sent. Keep `buildDailyNudge` pure — that's what
-`preview-nudge.ts` relies on.
+pure (items → text + optional keyboard + topId) and imports no DB/Telegram, so it's unit-tested
+directly. It renders a **digest of only what's overdue and what's due today** (the two buckets fall
+out of `daysOverdue`'s sign) — two sections, **3 items each**, with each section's overflow rolled
+into a `+N more` line. Nothing future, back burner, or parking ever shows. `runSweep(slot)` in
+[src/lib/sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper the cron calls: it reads the DB,
+sends the message, and writes accountability memory (bumps `nudgeCount`, bumps `ignoreCount` when it
+re-nudges a still-open top item, appends a `nudged` Event). **Both slots stay silent when nothing is
+overdue or due today** — no empty-state ping (a notification on a quiet day just teaches you to swipe
+the bot away unread). The two slots differ:
+
+- **Morning** is a plain preview — bullet list, **no buttons**. You read the day, you don't tick it.
+- **Evening** is the wrap-up: the items are **numbered** and carry a compact **tick grid** (`✓ 1`
+  `✓ 2` …, three per row, the number tying each button to its line — Telegram can't put a button
+  inside a text row). Tapping a tick runs `completeItem` and the webhook **re-renders the message in
+  place** so the burned item drops and a hidden overflow item surfaces. Clear the lot and the message
+  becomes a **"Well done"** cheer — the one exception to evening silence: `clearedSomethingToday` (a
+  `done` Event today, in `sweep.ts`) means you cleared the day rather than never having anything due.
+
+**Referee escalation is paused.** The warning copy and the "Tell <referee>" button are gated behind
+`ESCALATION_ENABLED` in [sweep.ts](src/lib/sweep.ts) (currently `false`) until WhatsApp auto-send is
+configured; flip it and the ladder, the warning text, and the button return together. The escalation
+machinery below (the M2 ladder, `wa.me` draft, auto-send) is intact but unreachable while paused. Keep
+`buildDailyNudge` pure — that's what `preview-nudge.ts` relies on.
 
 **Referee escalation (M2, the moat)** — the one thing a free to-do app can't copy: a real
 consequence with a real person. The pure ladder is `escalationStep` in
@@ -291,8 +301,8 @@ referee, deadline, and a **"Repeats"** select (none / daily / weekly / monthly =
 and `important` are deliberately absent: type is derived from deadline+repeats and `important` is
 brain-owned, so neither is clickable. The destructive action sits behind a tap-to-confirm (delete
 when there's no cadence, retire for a commitment). Rows and the hero otherwise show only the done
-tick; quick-snooze was removed from the board, so deferring happens through Telegram (the nudge's
-snooze presets) or by editing the date. There is no promote button and no parking type option:
+tick; quick-snooze was removed from the board, so deferring happens through Telegram (the typed
+`snooze <id> <days>` command) or by editing the date. There is no promote button and no parking type option:
 giving an item a **deadline** in the panel
 derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
 it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at

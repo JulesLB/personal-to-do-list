@@ -1,6 +1,6 @@
 # Ember
 
-**A personal accountability engine you run from Telegram.** Text it what you commit to. Claude files it, a pressure score ranks everything, and it nudges you each morning about the one thing that's burning. Ignore that long enough and it hands you a pre-drafted message to send a real person.
+**A personal accountability engine you run from Telegram.** Text it what you commit to. Claude files it, a pressure score ranks everything, and twice a day it sends you a tight digest of what's overdue and what's due today. Ignore something long enough and it hands you a pre-drafted message to send a real person.
 
 ![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white) ![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white) ![Supabase](https://img.shields.io/badge/Supabase-Postgres-3FCF8E?logo=supabase&logoColor=white) ![Claude](https://img.shields.io/badge/Claude-Haiku-D97757?logo=anthropic&logoColor=white) ![Vercel](https://img.shields.io/badge/Vercel-deploy-000000?logo=vercel)
 
@@ -45,8 +45,8 @@ Next.js 15 (App Router) on Vercel · Prisma 6 + Supabase Postgres · Claude (Ant
 2. **Classify.** Claude turns it into a structured item: category, importance, deadline, referee, and whether it repeats. Type (task / commitment / parking) is derived from the date and cadence, not chosen: a deadline makes it a task, a repeat makes it a commitment, neither parks it.
 3. **Rank.** Everything gets one pressure score. No quadrants; the app sets the order.
 4. **See.** The web board opens with a streak chip, the burning #1 as a hero, then everything else in bands (on fire / heating up / back burner) with a quiet parking lot at the bottom. Category shows as a small colored dot; tap a row to edit any field.
-5. **Nudge.** A morning cron sends one message: the top task with one-tap buttons (Done / I'll do it today / Tell your referee) and a short what's-next list. An evening cron checks back, but only if something's still pressing.
-6. **Escalate.** A task 3+ days late, or a commitment skipped two cycles running, leads with a pre-drafted WhatsApp message to your referee. Tap "I'll do it today" and fail to, and the evening check calls out the broken promise.
+5. **Nudge.** Two daily crons send a digest of what's overdue and what's due today — three per section, the rest as "+N more". The morning is a plain preview; the evening wrap-up numbers each item with one-tap ✓ buttons that complete it straight from the chat and cheers a day you fully cleared. Both stay silent when nothing's overdue or due.
+6. **Escalate.** A task 3+ days late, or a commitment skipped two cycles running, leads with a pre-drafted WhatsApp message to a referee you named at capture — accountability with a real person, by consent. (Currently gated behind a flag until WhatsApp auto-send is wired up.)
 7. **Close.** Tap Done (the card burns to ash) or reply `done <id>`. A one-off closes for good; a commitment honors the cycle and resurfaces later. `retire <id>` ends a commitment for good.
 8. **Reflect.** The Review page reads your week back: a scoreboard of what's slipping and a short AI coach's take, refreshed on demand.
 
@@ -96,7 +96,7 @@ Tap the buttons on the daily nudge, or type:
 
 ## The three ways it dies, and the guardrails
 
-1. **The nag becomes wallpaper.** Guard: at most two messages a day on the single most pressing task, and the evening one stays silent unless something's burning.
+1. **The nag becomes wallpaper.** Guard: at most two messages a day, scoped to only what's overdue or due today, and both stay silent on a quiet day.
 2. **The teeth never bite.** Guard: the escalation message is pre-drafted with a one-tap WhatsApp link, and the referee is set at capture.
 3. **Curation becomes a chore.** Guard: capture is one sloppy sentence, Claude does the filing, the board is read-mostly.
 
