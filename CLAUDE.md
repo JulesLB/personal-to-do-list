@@ -112,7 +112,8 @@ owns every `Item`, and **`Referee`** is a per-user table (`label`, `relation`, `
 `consent`) that replaced the `WIFE_WHATSAPP` / `*_CONSENT` env-var trio. The Telegram chat is the
 identity anchor: `resolveUser(chatId)` ([src/lib/user.ts](src/lib/user.ts)) resolves-or-creates the
 user behind a chat (replacing the old `ensureOwner` single-owner gate), so **signup is open** — any
-chat that messages the bot becomes a user (abuse hardening is PRD-16). Every read/write is scoped by
+chat that messages the bot becomes a user, abuse-hardened on the telegram path by a per-chat rate limit
+(`botRateLimited`) and a hard monthly spend cap (`overMonthlyBudget`, ~$3/user, owner exempt). Every read/write is scoped by
 `userId`; id-based mutations use `updateMany`/`deleteMany` filtered by `{ id, userId }` so a guessed id
 can't touch another user's item. The sweep loops all users and sends each their own nudge. The board
 reads the logged-in user via `currentUser()` ([src/lib/session.ts](src/lib/session.ts)); board auth is

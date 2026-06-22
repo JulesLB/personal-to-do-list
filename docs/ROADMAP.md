@@ -1,12 +1,10 @@
 # Ember — Product Roadmap
 
-*Owner: Jules · Created 2026-06-20 · Source: the product review in [product-review.html](product-review.html)*
+*Owner: Jules · Created 2026-06-20*
 
-This is the working build order for Ember, re-prioritized through a product lens. It supersedes the
-sequencing in [docs/hermes-prd.md](docs/hermes-prd.md). That PRD's Phase 0–1 are already built
-(commitments survive completion, the `Event` table, tests, freeform edits, the editable board, snooze
-presets, voice). This file decides what comes next and in what order. Where a milestone has deeper
-engineering and learning notes, it points back to the matching PRD-number in that doc.
+This is the working build order for Ember, re-prioritized through a product lens. The earliest phases are
+already built (commitments survive completion, the `Event` table, tests, freeform edits, the editable
+board, snooze presets, voice). This file decides what comes next and in what order.
 
 ## How to use this file
 
@@ -109,7 +107,7 @@ how much it is nagging tips from motivating into punishing.
 
 ## M2 · Close the referee loop  *(the moat)*
 
-**Decision: Improve · Effort: L · Priority: P0 · Status: BUILT (awaiting Meta setup to go live) · Maps to PRD-6, PRD-7**
+**Decision: Improve · Effort: L · Priority: P0 · Status: BUILT (awaiting Meta setup to go live)**
 
 **Shipped (code).** The full graduated ladder, the referee-can-poke-back loop, and a real
 server-controlled WhatsApp channel are built and tested (57 tests green, build clean), on branch
@@ -150,7 +148,7 @@ vars are set, auto-send falls back to the one-tap `wa.me` draft and everything e
 
 Cost: free on the test number (5 recipients); pennies per utility template on a production number.
 
-**Decision: Improve · Effort: L · Priority: P0 · Maps to PRD-6, PRD-7**
+**Decision: Improve · Effort: L · Priority: P0**
 
 **Why.** Escalation is Ember's whole reason to exist, and today it is a button that drafts a WhatsApp
 message *for you to send to yourself's referee*. In [src/lib/nudge.ts](src/lib/nudge.ts), `buttons()` puts
@@ -199,14 +197,14 @@ Split into two shippable halves.
 [src/lib/waLink.ts](src/lib/waLink.ts), a new `sendToReferee` module, a new referee-link route under
 `src/app/`, `prisma/schema.prisma` (referee channel + consent fields, or a `Referee` row), tests.
 
-**Reference.** Full ladder, provider trade-offs, and idempotency notes: PRD-6 and PRD-7 in
-[docs/hermes-prd.md](docs/hermes-prd.md).
+**Reference.** Full ladder, provider trade-offs, and idempotency notes live in the escalation modules
+([src/lib/escalate.ts](../src/lib/escalate.ts), [src/lib/referee.ts](../src/lib/referee.ts)).
 
 ---
 
 ## M3 · Weekly receipts
 
-**Decision: Add · Effort: M · Priority: P1 · Status: IN PROGRESS (board panel shipped; Sunday digest pending) · Maps to PRD-8, PRD-9**
+**Decision: Add · Effort: M · Priority: P1 · Status: IN PROGRESS (board panel shipped; Sunday digest pending)**
 
 **Shipped (Review page — Command Center).** Reframed from a board panel into its own `/review` route,
 because a reflective/triage surface is different functionality from the action board. Two altitudes:
@@ -254,7 +252,7 @@ data is already being written.
 
 ## M5 · First-run activation
 
-**Decision: Improve · Effort: M · Priority: P1 · Status: DONE (referee + email capture parked) · Maps to PRD-12**
+**Decision: Improve · Effort: M · Priority: P1 · Status: DONE (referee + email capture parked)**
 
 **Shipped (value-first, referee parked).** Reordered from the literal DoD: capture is the activation
 event, not a referee-attached item, so a fresh chat feels the product work before being asked to set
@@ -326,7 +324,7 @@ fix for it. Helps the owner too, not only new users.
 
 ## M8 · Deadline-aware nudge timing
 
-**Decision: Improve · Effort: M · Priority: P2 (you moved this last) · Status: TODO · Maps to PRD-18 · Breaks a constraint**
+**Decision: Improve · Effort: M · Priority: P2 (you moved this last) · Status: TODO · Breaks a constraint**
 
 **Why.** Two fixed crons in [vercel.json](vercel.json) fire at 09:00 and 21:00 HKT, and `runSweep` sends
 the single top item, so a task set for "today at 3pm" is invisible until the next window and there is no
