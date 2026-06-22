@@ -80,6 +80,31 @@ describe("runSweep", () => {
     expect(res.sent).toBe(0);
   });
 
+  it("evening cheers when the day's items were all cleared", async () => {
+    db.item.findMany.mockResolvedValue([]); // nothing pending
+    db.event.findFirst.mockResolvedValue({ id: 1 }); // but something was done today
+    const send = vi.fn().mockResolvedValue(undefined);
+
+    const res = await runSweep("evening", send);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][1].toLowerCase()).toContain("well done");
+    expect(res.sent).toBe(1);
+    // It's a cheer, not an accountability nudge: no memory writes.
+    expect(db.item.update).not.toHaveBeenCalled();
+    expect(db.event.create).not.toHaveBeenCalled();
+  });
+
+  it("morning stays silent even after clearing the day (cheer is evening-only)", async () => {
+    db.item.findMany.mockResolvedValue([]);
+    db.event.findFirst.mockResolvedValue({ id: 1 });
+    const send = vi.fn().mockResolvedValue(undefined);
+
+    await runSweep("morning", send);
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("morning still sends when something is pressing", async () => {
     db.item.findMany.mockResolvedValue([overdue()]);
     const send = vi.fn().mockResolvedValue(undefined);
@@ -94,7 +119,11 @@ describe("runSweep", () => {
     expect(db.event.create).toHaveBeenCalledTimes(1);
   });
 
-  it("warns first when a critical item has an opted-in referee", async () => {
+  // Referee escalation is paused (ESCALATION_ENABLED = false) until WhatsApp
+  // auto-send is wired up. The nudge sends normally but never mentions the
+  // referee or writes an escalation event. These assertions flip back when
+  // escalation returns.
+  it("stays quiet about the referee while escalation is paused", async () => {
     db.item.findMany.mockResolvedValue([criticalWithReferee()]);
     db.referee.findUnique.mockResolvedValue(optedInRef);
     const send = vi.fn().mockResolvedValue(undefined);
@@ -102,27 +131,11 @@ describe("runSweep", () => {
     await runSweep("morning", send);
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][1].toLowerCase()).toContain("last warning");
-    // nudged + escalation_warned written; no told_referee yet.
+    const text = send.mock.calls[0][1].toLowerCase();
+    expect(text).not.toContain("warning");
+    expect(text).not.toContain("wife");
     const kinds = db.event.create.mock.calls.map((c) => c[0].data.kind);
-    expect(kinds).toContain("escalation_warned");
-    expect(kinds).not.toContain("told_referee");
-  });
-
-  it("degrades to the one-tap draft past the warning when WhatsApp is unset", async () => {
-    db.item.findMany.mockResolvedValue([criticalWithReferee()]);
-    db.referee.findUnique.mockResolvedValue(optedInRef);
-    // The warning already went out this cycle.
-    db.event.findFirst.mockImplementation(({ where }: { where: { kind: string } }) =>
-      Promise.resolve(where.kind === "escalation_warned" ? { id: 1 } : null)
-    );
-    const send = vi.fn().mockResolvedValue(undefined);
-
-    await runSweep("morning", send);
-
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][1].toLowerCase()).toContain("isn't set up");
-    const kinds = db.event.create.mock.calls.map((c) => c[0].data.kind);
+    expect(kinds).not.toContain("escalation_warned");
     expect(kinds).not.toContain("told_referee");
   });
 });

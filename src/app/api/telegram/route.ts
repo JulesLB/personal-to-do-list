@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendMessage, answerCallback, type InlineKeyboard } from "@/lib/telegram";
+import { sendMessage, answerCallback, editMessageText, type InlineKeyboard } from "@/lib/telegram";
+import { buildDailyNudge } from "@/lib/nudge";
 import { interpret, type OpenItemLite } from "@/lib/classify";
 import { createRefereeToken, createLoginLinkToken, passwordMatches } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
@@ -67,6 +68,25 @@ async function completeItem(id: number, userId: number): Promise<void> {
   await logEvent(id, "done");
 }
 
+// After a tick on the daily nudge, rebuild the digest and edit the message so the
+// burned item drops out and the section counts tick down. When nothing is left
+// overdue or due today, the message becomes a short all-clear with no buttons.
+// Best-effort: a failed edit (or a missing message) never breaks the callback.
+async function rerenderNudge(
+  userId: number,
+  message: { message_id?: number; chat?: { id?: number | string } } | undefined
+): Promise<void> {
+  if (!message?.message_id || message.chat?.id == null) return;
+  const now = new Date();
+  const items = await prisma.item.findMany({ where: { status: "open", userId } });
+  const live = items.filter((i) => !(i.snoozeUntil && i.snoozeUntil > now));
+  // Ticks only exist on the evening message, so re-render the evening shape so the
+  // remaining items keep their numbered grid.
+  const nudge = buildDailyNudge(live, now, "evening");
+  const text = nudge?.text ?? "Well done. You cleared everything due today. 🔥";
+  await editMessageText(message.chat.id, message.message_id, text, nudge?.keyboard).catch(() => {});
+}
+
 export async function POST(req: NextRequest) {
   // Constant-time check of the Telegram webhook secret (HMAC both sides, then a
   // constant-time compare) so the secret can't leak through response timing.
@@ -119,7 +139,8 @@ export async function POST(req: NextRequest) {
       const id = Number(m[2]);
       if (m[1] === "done") {
         await completeItem(id, user.id).catch(() => {});
-        await answerCallback(cb.id, "Done.");
+        await answerCallback(cb.id, "Done. 🔥");
+        await rerenderNudge(user.id, cb.message);
       } else if (m[1] === "today") {
         // Record the promise. Deliberately not snoozed: the evening check is
         // supposed to find it still open and call out the broken promise.
