@@ -413,11 +413,17 @@ $1/$5 per MTok + cache tiers; Whisper per-second) — an unknown model logs $0, 
 classify ([classify.ts](src/lib/classify.ts), userId via `ClassifyContext`), coach
 ([coach.ts](src/lib/coach.ts), userId param), transcribe ([voice.ts](src/lib/voice.ts), userId +
 `durationSeconds` from the Telegram voice note). The dashboard ([src/app/admin/page.tsx](src/app/admin/page.tsx),
-styled with a CSS module) reads `ApiUsage` with live SQL aggregates (no model calls, always current):
-KPI cards (today / this month / all-time cost + token total & cache share, all HKT via
-[src/lib/costs.ts](src/lib/costs.ts)), a per-tool breakdown with cost-per-run, provider + token boxes, and
-a recent-calls table. **`latencyMs`/`ok`/`errorKind` are logged but unsurfaced** — the seed for the
-monitoring panels that come after the cost view.
+styled with a CSS module) reads `ApiUsage` (plus `User`/`Item`/`Event`) with live SQL aggregates (no
+model calls, always current) and is split into three icon-headed sections. **👥 Users & activity** comes
+first: total users (+ new this week), active today, items captured this week, items done this week — the
+growth/engagement read, all HKT over `hktWeekStart` (trailing 7 days) / `hktDayStart` from
+[src/lib/costs.ts](src/lib/costs.ts). *Active today* is distinct `userId` on today's `ApiUsage`, i.e.
+"messaged the bot today" — board-only visits don't log a call, so they're excluded by design. Then **💸
+Cost & tokens**: KPI cards (today / this month / all-time cost + token total & cache share). Then **🛠️
+Tools**: a per-tool breakdown with cost-per-run, provider + token boxes, and a recent-calls table whose
+first 3 rows show with the rest behind a `<details>` disclosure. **`latencyMs`/`ok`/`errorKind` are
+logged but only surfaced as a per-row ok/error dot** — the seed for the monitoring panels (error rate,
+p95 latency, cron heartbeat) that come after the cost view.
 
 **Admin auth + brute-force guard** — `/admin` is gated by its own **`ADMIN_SECRET`**, distinct from the
 board's `APP_SECRET`: the board login grants no access. [middleware.ts](src/middleware.ts) routes `/admin`

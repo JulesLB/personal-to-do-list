@@ -33,7 +33,7 @@ The build doubles as a learning exercise, so the boring parts are first-class:
 - **Tested where it counts:** Vitest over the pure ranking and nudge logic against a fixed clock, no DB required. `npm run build` is the type-check gate.
 - **Safe to iterate:** `main` is production. Work happens on a branch against a throwaway SQLite DB that never touches prod, so the loop is branch, test, merge.
 - **Tuned for latency:** Vercel functions pinned to the same region as the database to keep round trips short.
-- **Cost-aware:** every model call is metered into a usage log, surfaced on an internal ops dashboard (spend by tool, tokens, cache hit rate) behind its own secret with DB-backed brute-force rate limiting.
+- **Cost-aware:** every model call is metered into a usage log, surfaced on an internal ops dashboard, behind its own secret with DB-backed brute-force rate limiting. The dashboard reads three live views: users & activity (total/new users, active today, items captured/done this week), spend (by tool, tokens, cache hit rate), and recent calls.
 
 ## Stack
 
