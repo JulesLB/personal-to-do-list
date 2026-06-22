@@ -43,6 +43,22 @@ export async function ownerUser(): Promise<User | null> {
   return prisma.user.findFirst({ orderBy: { id: "asc" } });
 }
 
+// The owner (Jules) is exempt from the bot's rate limit and monthly spend cap so
+// testing isn't throttled. Owner = the lowest-id user, matching ownerUser(). A
+// set OWNER_CHAT_ID env wins if present, so a reset DB can't hand the exemption to
+// whoever messages first. Fails to false on a DB error: better to throttle the
+// owner briefly than to silently exempt everyone.
+export async function isOwnerUser(userId: number, chatId?: string | number): Promise<boolean> {
+  const envOwner = process.env.OWNER_CHAT_ID?.trim();
+  if (envOwner && chatId !== undefined) return String(chatId) === envOwner;
+  try {
+    const owner = await prisma.user.findFirst({ orderBy: { id: "asc" }, select: { id: true } });
+    return owner?.id === userId;
+  } catch {
+    return false;
+  }
+}
+
 // The referee labels a user has configured, for the classifier prompt + enum.
 export async function refereeLabels(userId: number): Promise<string[]> {
   const refs = await prisma.referee.findMany({

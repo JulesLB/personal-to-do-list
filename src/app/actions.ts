@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { deriveType } from "@/lib/rank";
 import { forceAnalysis } from "@/lib/reviewAnalysis";
 import { currentUser } from "@/lib/session";
+import { clampTitle, normalizeCategory } from "@/lib/validate";
 
 // Both control surfaces read the same items, so every mutation refreshes both the
 // board and the Review page.
@@ -57,7 +58,7 @@ export async function retire(id: number) {
 // stray submit can't wipe the item. Shoving the deadline to a later date counts as
 // a deferral, same as a snooze.
 export async function updateItem(id: number, formData: FormData) {
-  const title = String(formData.get("title") ?? "").trim();
+  const title = clampTitle(String(formData.get("title") ?? ""));
   if (!title) return;
   const me = await currentUser();
   if (!me) return;
@@ -73,7 +74,7 @@ export async function updateItem(id: number, formData: FormData) {
     data: {
       title,
       type: deriveType(deadline, cadence),
-      category: String(formData.get("category") || "") || null,
+      category: normalizeCategory(String(formData.get("category") || "")),
       referee: String(formData.get("referee") || "") || null,
       cadence,
       deadline,
@@ -93,7 +94,7 @@ export async function updateItem(id: number, formData: FormData) {
 // zone rule — anything you bother typing in is assumed to matter until proven
 // otherwise), deadlines stored at 09:00 HKT. A blank title is ignored.
 export async function createItem(formData: FormData) {
-  const title = String(formData.get("title") ?? "").trim();
+  const title = clampTitle(String(formData.get("title") ?? ""));
   if (!title) return;
   const me = await currentUser();
   if (!me) return;
@@ -105,7 +106,7 @@ export async function createItem(formData: FormData) {
       userId: me.id,
       title,
       type: deriveType(deadline, cadence),
-      category: String(formData.get("category") || "") || null,
+      category: normalizeCategory(String(formData.get("category") || "")),
       important: true,
       deadline,
       referee: String(formData.get("referee") || "") || null,
