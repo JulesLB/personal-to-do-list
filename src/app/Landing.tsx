@@ -1,5 +1,36 @@
 import Link from "next/link";
 import { HeroFlow, Reveal } from "./LandingDemo";
+import EmberShader from "./EmberShader";
+
+// Telegram paper-plane mark, inline so it inherits layout and needs no asset.
+function TelegramIcon() {
+  return (
+    <svg className="lp-snip-tg" viewBox="0 0 24 24" width={16} height={16} aria-hidden focusable="false">
+      <circle cx="12" cy="12" r="12" fill="#29a9eb" />
+      <path
+        fill="#fff"
+        d="M5.5 11.8 17 7.3c.5-.2 1 .1.9.8l-2 9.3c-.1.6-.5.7-1 .4l-2.8-2-1.3 1.3c-.2.2-.3.3-.6.3l.2-3 5.3-4.8c.2-.2 0-.3-.3-.1l-6.6 4.1-2.8-.9c-.6-.2-.6-.6.1-.9Z"
+      />
+    </svg>
+  );
+}
+
+// Five flame-toned goo blobs (radial gradients) that drift behind the "why" cards.
+// Pure CSS animation; the goo SVG filter melts them together. Recolored from the
+// source's neon palette to Ember's flame family.
+function GooBlobs() {
+  return (
+    <div className="lp-goo" aria-hidden>
+      <div className="lp-goo-blobs">
+        <span className="lp-goo-blob b1" />
+        <span className="lp-goo-blob b2" />
+        <span className="lp-goo-blob b3" />
+        <span className="lp-goo-blob b4" />
+        <span className="lp-goo-blob b5" />
+      </div>
+    </div>
+  );
+}
 
 // Public marketing page (rendered at /landing). Explains Ember, shows the whole
 // loop end-to-end in the hero animation, then walks the three steps (revealing on
@@ -24,11 +55,17 @@ export function Landing() {
           <feTurbulence type="fractalNoise" baseFrequency="0.02 0.045" numOctaves={3} seed={7} result="noise" />
           <feDisplacementMap in="SourceGraphic" in2="noise" scale="46" xChannelSelector="R" yChannelSelector="G" />
         </filter>
+        {/* Goo: blur the blobs, then a high-contrast alpha matrix fuses overlapping
+            edges into one metaball mass before un-blurring the source. */}
+        <filter id="lp-goo">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+          <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8" result="goo" />
+          <feBlend in="SourceGraphic" in2="goo" />
+        </filter>
       </svg>
 
       <div className="lp">
-        <header className="lp-nav lp-nav-center">
-          <span className="lp-spacer" />
+        <header className="lp-nav">
           <span className="lp-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="" width={28} height={28} className="lp-brand-logo" />
@@ -64,107 +101,89 @@ export function Landing() {
 
         <section className="lp-how">
           <div className="lp-how-head">
-            <h2 className="lp-h2">How it works</h2>
+            <h2 className="lp-h2">
+              How <span className="lp-flame-text">Ember</span> works
+            </h2>
           </div>
 
-          <Reveal className="lp-howbox lp-howbox-a">
-            <div className="lp-howbox-text">
-              <span className="lp-how-chip">💬</span>
-              <span className="lp-how-num">Step 1</span>
-              <h3 className="lp-how-h">Text it, even messy</h3>
-              <p className="lp-how-p">
-                Message Ember like you would text a friend, or send a voice note. It reads the mess and turns
-                it into a clean, dated task, with an accountability partner if you name one.
-              </p>
-            </div>
-            <div className="lp-how-art">
-              <div className="lp-snip">
-                <div className="lp-bubble lp-bubble-me">buy a card for my wife&apos;s birthday tue, tell her</div>
-                <div className="lp-bubble lp-bubble-bot">
-                  Created &lsquo;Buy a card for my wife&apos;s birthday&rsquo; due Tue 23 Jun, wife as partner 🎂
-                  <span className="lp-bubble-meta">#62 · task · personal · by 2026-06-23</span>
+          <div className="lp-how-grid">
+            <Reveal className="lp-howstep lp-howstep-a">
+              <div className="lp-howstep-head">
+                <span className="lp-how-chip">💬</span>
+                <span className="lp-how-num">Step 1</span>
+              </div>
+              <h3 className="lp-how-h">Text it</h3>
+              <p className="lp-how-p">Tell Ember what you need to do, by text or voice. It files a clean, dated task.</p>
+              <div className="lp-howstep-art">
+                <div className="lp-snip lp-snip-chat">
+                  <div className="lp-snip-head">
+                    <TelegramIcon />
+                    Ember bot
+                  </div>
+                  <div className="lp-bubble lp-bubble-me">call the dentist friday, tell my wife</div>
+                  <div className="lp-bubble lp-bubble-bot">Created &lsquo;Call the dentist&rsquo; · due Fri 🦷</div>
                 </div>
               </div>
-            </div>
-          </Reveal>
+            </Reveal>
 
-          <Reveal className="lp-howbox lp-howbox-b">
-            <div className="lp-howbox-text">
-              <span className="lp-how-chip">📊</span>
-              <span className="lp-how-num">Step 2</span>
-              <h3 className="lp-how-h">It shows what&apos;s urgent and pushes you to finish</h3>
-              <p className="lp-how-p">
-                Your board and the Telegram bot keep you on the hook for what you said you&apos;d deliver. The
-                most urgent item sits on top, and Ember pings you morning and night until it is done.
-              </p>
-            </div>
-            <div className="lp-how-art">
-              <div className="lp-snip lp-snip-board">
-                <div className="lp-flow-row overdue">
-                  <div className="lp-flow-main">
-                    <div className="lp-flow-title">Call the dentist</div>
-                    <div className="lp-mini-meta">
-                      <span className="lp-mini-dot" style={{ "--c": "#16b074" } as React.CSSProperties} />
-                      Health
-                      <span className="lp-flow-due od">2d overdue</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="lp-flow-row">
-                  <div className="lp-flow-main">
-                    <div className="lp-flow-title">File Q2 taxes</div>
-                    <div className="lp-mini-meta">
-                      <span className="lp-mini-dot" style={{ "--c": "#f5a623" } as React.CSSProperties} />
-                      Money
-                      <span className="lp-flow-due">in 5 days</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="lp-flow-row">
-                  <div className="lp-flow-main">
-                    <div className="lp-flow-title">Gym, 3x this week</div>
-                    <div className="lp-mini-meta">
-                      <span className="lp-mini-dot" style={{ "--c": "#16b074" } as React.CSSProperties} />
-                      Health
-                      <span className="lp-flow-due">in 6 days</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="lp-nudge lp-nudge-static">🔔 You said you&apos;d call the dentist. Still open.</div>
+            <Reveal className="lp-howstep lp-howstep-b" delay={120}>
+              <div className="lp-howstep-head">
+                <span className="lp-how-chip">📊</span>
+                <span className="lp-how-num">Step 2</span>
               </div>
-            </div>
-          </Reveal>
+              <h3 className="lp-how-h">It chases you</h3>
+              <p className="lp-how-p">Everything sits ranked by what&apos;s due. Ember nudges you in Telegram until it&apos;s done.</p>
+              <div className="lp-howstep-art">
+                <div className="lp-snip lp-snip-board">
+                  <div className="lp-flow-row lp-flow-line overdue">
+                    <span className="lp-flow-title">Call the dentist</span>
+                    <span className="lp-flow-due od">2d overdue</span>
+                  </div>
+                  <div className="lp-flow-row lp-flow-line">
+                    <span className="lp-flow-title">File Q2 taxes</span>
+                    <span className="lp-flow-due">in 5 days</span>
+                  </div>
+                  <div className="lp-flow-row lp-flow-line">
+                    <span className="lp-flow-title">Gym, 3x this week</span>
+                    <span className="lp-flow-due">in 6 days</span>
+                  </div>
+                  <div className="lp-flow-row lp-flow-line">
+                    <span className="lp-flow-title">Renew passport</span>
+                    <span className="lp-flow-due">in 2 wks</span>
+                  </div>
+                </div>
+              </div>
+            </Reveal>
 
-          <Reveal className="lp-howbox lp-howbox-c">
-            <div className="lp-howbox-text">
-              <span className="lp-how-chip">🤝</span>
-              <span className="lp-how-num">Step 3</span>
-              <h3 className="lp-how-h">Name an accountability partner Ember can call in</h3>
-              <p className="lp-how-p">
-                Pick someone, your partner, your sister, a colleague. Stall too long and Ember texts them what
-                you have been dodging. The consequence a to-do list can never give you.
-              </p>
-            </div>
-            <div className="lp-how-art">
-              <div className="lp-snip">
-                <div className="lp-wa">
-                  <div className="lp-wa-head">
-                    <span className="lp-wa-avatar">W</span>
-                    <span>Your wife</span>
-                  </div>
-                  <div className="lp-wa-bubble">
-                    Hi, it&apos;s Ember. Jules said he&apos;d call the dentist 5 days ago and hasn&apos;t. Mind
-                    nudging him?
+            <Reveal className="lp-howstep lp-howstep-c" delay={240}>
+              <div className="lp-howstep-head">
+                <span className="lp-how-chip">🤝</span>
+                <span className="lp-how-num">Step 3</span>
+              </div>
+              <h3 className="lp-how-h">It calls in backup</h3>
+              <p className="lp-how-p">Name someone you trust. Stall too long and Ember texts them what you&apos;re dodging.</p>
+              <div className="lp-howstep-art">
+                <div className="lp-snip">
+                  <div className="lp-wa">
+                    <div className="lp-wa-head">
+                      <span className="lp-wa-avatar">W</span>
+                      <span>Your wife</span>
+                    </div>
+                    <div className="lp-wa-bubble">Hi, it&apos;s Ember. Jules said he&apos;d call the dentist and hasn&apos;t. Mind nudging him?</div>
                   </div>
                 </div>
               </div>
-            </div>
-          </Reveal>
+            </Reveal>
+          </div>
         </section>
 
         <section className="lp-why">
-          <h2 className="lp-h3">What makes Ember different from your notes app</h2>
-          <div className="lp-cards">
+          <h2 className="lp-h3">
+            What makes <span className="lp-flame-text">Ember</span> different from your notes app
+          </h2>
+          <div className="lp-why-stage">
+            <GooBlobs />
+            <div className="lp-cards">
             <div className="lp-feat">
               <span className="lp-feat-ico">📲</span>
               <h3 className="lp-feat-h">A list waits. Ember chases.</h3>
@@ -189,27 +208,28 @@ export function Landing() {
                 line for you.
               </p>
             </div>
+            </div>
           </div>
         </section>
 
         <section className="lp-final">
-          <h2 className="lp-final-h">Stop letting things slip.</h2>
-          <p className="lp-final-p">Set up in two minutes. No account, no password.</p>
-          <Cta size="lg" />
+          <EmberShader />
+          <div className="lp-final-inner">
+            <h2 className="lp-final-h">Let&apos;s start with something you&apos;ve been putting off.</h2>
+            <p className="lp-final-p">
+              Set up in two minutes. Your chat is your login, no account, no password.
+            </p>
+            <Cta size="lg" />
+          </div>
         </section>
 
         <footer className="lp-foot">
           <span className="lp-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="" width={20} height={20} className="lp-brand-logo" />
-            Ember
+            <span className="lp-brand-name lp-foot-name">Ember</span>
           </span>
-          <span className="lp-foot-meta">
-            © 2026 Ember ·{" "}
-            <Link href="/" className="lp-foot-link">
-              Log in
-            </Link>
-          </span>
+          <span className="lp-foot-meta">© 2026 Ember</span>
         </footer>
       </div>
     </>
