@@ -28,6 +28,7 @@ Status values: `TODO` · `IN PROGRESS` · `DONE` · `PARKED`.
 | M3 | Weekly receipts → Review page | Add | M | P1 | IN PROGRESS · Review page (triage + bonfire) shipped, Sunday digest pending |
 | M5 | First-run activation | Improve | M | P1 | DONE · referee + email capture parked |
 | M6 | Commit templates | Add | S | P2 | TODO |
+| M7 | **Pacts** (paired accountability) | Add | L | P1 | PLANNED · [PRD](M7-pacts.md), Telegram-only, build not started |
 | M8 | Deadline-aware nudge timing | Improve | M | P2 | DONE · code shipped on `feat/m8-timed-nudges`; live once GH secrets `APP_URL`/`CRON_SECRET` are set |
 
 **Sequencing logic.** Cut the noise first (M0–M1: three near-free wins that sharpen the signal before
@@ -319,6 +320,25 @@ fix for it. Helps the owner too, not only new users.
 
 **Touches.** [src/app/AddItem.tsx](src/app/AddItem.tsx), [src/app/actions.ts](src/app/actions.ts),
 [src/app/page.tsx](src/app/page.tsx).
+
+---
+
+## M7 · Pacts (paired accountability)
+
+**Decision: Add · Effort: L · Priority: P1 · Status: PLANNED (full PRD + build plan in [M7-pacts.md](M7-pacts.md))**
+
+The "make it a pact" bet: two people commit to the same recurring thing and witness each other. Ember's
+first multi-player feature and its first built-in growth loop. Unblocked now that Phase 4 shipped the
+multi-user model M7 was waiting on.
+
+**Decided with Jules (2026-06-23):** Telegram-only for V1 (the invitee installs Telegram, eased by a
+framed `/p/<code>` invite page + a pre-written invite message); a pact = two linked commitments + a thin
+coordination layer (maximum reuse of ranking / nudge / streak); the pact streak is separate so a flaky
+partner can't break your personal one; discovery prompts on recurring-commitment creation; ship Phase A
+(invite + accept) + Phase B (the see-each-other loop), fast-follow Phase C (nudge-partner, leave/end).
+
+**Full detail — positioning, the ultra-simple flow, schema, phases, and per-phase DoD — lives in the
+PRD: [docs/M7-pacts.md](M7-pacts.md).** Build not started.
 
 ---
 
