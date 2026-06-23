@@ -51,10 +51,25 @@ export type IntentAction =
 export type Intent = {
   action: IntentAction;
   itemId: number | null;
+  // complete/snooze/retire can hit several open items at once ("both are done").
+  // This is the canonical target list; itemId is the first of it for single-target
+  // paths (update). See targetIdsFromRaw.
+  itemIds: number[];
   fields: ItemFields;
   snoozeDays: number | null;
   reply: string;
 };
+
+// Normalize the route tool's id fields into a canonical target list. itemIds is
+// the source of truth for multi-target actions; a lone itemId folds into a
+// single-element list. Deduped, numbers only.
+export function targetIdsFromRaw(raw: { itemId?: unknown; itemIds?: unknown }): number[] {
+  const single = typeof raw.itemId === "number" ? raw.itemId : null;
+  const multi = Array.isArray(raw.itemIds)
+    ? raw.itemIds.filter((n): n is number => typeof n === "number")
+    : [];
+  return Array.from(new Set(multi.length ? multi : single != null ? [single] : []));
+}
 
 // Compact view of an open item, handed to the router so it can resolve a phrase
 // like "push the dentist to Friday" to a concrete id by fuzzy title match.
@@ -101,6 +116,7 @@ Deciding the action:
 - "clarify": use this when an action targets an existing item but two or more open items plausibly match. Put a single, short disambiguating question in reply (name the candidates). Do NOT guess.
 
 Resolving the target: match against the OPEN ITEMS list by title and context. Only set itemId to an id that appears in that list. If nothing matches an edit-style request, treat it as a create instead.
+- Several items at once: when a complete, snooze, or retire refers to more than one open item ("both are done", "snooze those two", "drop the dentist and the gym thing"), put EVERY matching id in itemIds (you can leave itemId null). Your reply must name exactly the items in itemIds and nothing else, so the confirmation matches what actually changed.
 
 reply: a dry, direct one-line confirmation of what you did, echoing the concrete change ("Moved 'dentist' to Fri 20 Jun, 7pm"). For clarify, it's the question. At most one emoji, no fluff. Resolve all relative dates and times against NOW (Hong Kong time).`;
 }
@@ -167,7 +183,13 @@ export async function interpret(
                 },
                 itemId: {
                   type: ["number", "null"],
-                  description: "Target open item id for update/complete/snooze/retire; null otherwise",
+                  description: "Single target open item id for update/complete/snooze/retire; null otherwise",
+                },
+                itemIds: {
+                  type: "array",
+                  items: { type: "number" },
+                  description:
+                    "For complete/snooze/retire that hit several open items at once ('both are done'): every matching id. A single target can use itemId alone. Empty otherwise.",
                 },
                 updateMask: {
                   type: "array",
@@ -208,9 +230,12 @@ export async function interpret(
   const action = raw.action as IntentAction;
   const mask = action === "create" ? null : (raw.updateMask as string[] | undefined) ?? [];
 
+  const itemIds = targetIdsFromRaw(raw);
+
   return {
     action,
-    itemId: typeof raw.itemId === "number" ? raw.itemId : null,
+    itemId: itemIds[0] ?? null,
+    itemIds,
     fields: pickFields(raw, mask),
     snoozeDays: typeof raw.snoozeDays === "number" ? raw.snoozeDays : null,
     reply: (raw.reply as string) ?? "Done.",

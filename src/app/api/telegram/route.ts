@@ -393,14 +393,20 @@ export async function POST(req: NextRequest) {
     });
     const f = intent.fields;
 
-    // Mutations need a real, currently-open target. A missing or hallucinated
-    // id means we ask rather than touch the wrong thing.
-    const needsTarget =
-      intent.action === "update" ||
+    // Mutations need a real, currently-open target. complete/snooze/retire can
+    // carry several ids ("both are done"); update stays single-target. We keep only
+    // ids that are actually open, so a hallucinated id is dropped rather than acted
+    // on; if none survive we ask rather than touch the wrong thing.
+    const multiTarget =
       intent.action === "complete" ||
       intent.action === "snooze" ||
       intent.action === "retire";
-    if (needsTarget && (!intent.itemId || !openIds.has(intent.itemId))) {
+    const targetIds = intent.itemIds.filter((id) => openIds.has(id));
+    if (multiTarget && !targetIds.length) {
+      await sendMessage(chatId, intent.reply || "Which one? Send `list` to see the ids.");
+      return ok();
+    }
+    if (intent.action === "update" && (!intent.itemId || !openIds.has(intent.itemId))) {
       await sendMessage(chatId, intent.reply || "Which one? Send `list` to see the ids.");
       return ok();
     }
@@ -411,7 +417,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.action === "complete") {
-      await completeItem(intent.itemId!, user.id).catch(() => {});
+      // Sequential so each commitment's cadence math reads a consistent state.
+      for (const id of targetIds) await completeItem(id, user.id).catch(() => {});
       await sendMessage(chatId, intent.reply);
       return ok();
     }
@@ -419,7 +426,7 @@ export async function POST(req: NextRequest) {
     if (intent.action === "retire") {
       await prisma.item
         .updateMany({
-          where: { id: intent.itemId!, userId: user.id },
+          where: { id: { in: targetIds }, userId: user.id },
           data: { status: "retired", doneAt: new Date() },
         })
         .catch(() => {});
@@ -432,11 +439,11 @@ export async function POST(req: NextRequest) {
       const until = new Date(Date.now() + days * 86400000);
       await prisma.item
         .updateMany({
-          where: { id: intent.itemId!, userId: user.id },
+          where: { id: { in: targetIds }, userId: user.id },
           data: { snoozeUntil: until, lastNudgedAt: null, deferCount: { increment: 1 } },
         })
         .catch(() => {});
-      await logEvent(intent.itemId!, "snoozed");
+      await Promise.all(targetIds.map((id) => logEvent(id, "snoozed")));
       await sendMessage(chatId, intent.reply);
       return ok();
     }
