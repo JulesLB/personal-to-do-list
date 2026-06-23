@@ -175,7 +175,12 @@ date decides order. The board and both nudge slots consume `rankActionable`.
 Claude call with a forced `route` tool that turns a messy sentence into an `Intent`: an `action`
 (`create | update | complete | snooze | retire | query | clarify`), an optional target `itemId`
 resolved against the open list by fuzzy title match, and (for updates) the masked fields to change.
-Ambiguous edits return `clarify` with a single question instead of guessing. The system prompt
+Ambiguous edits return `clarify` with a single question instead of guessing. **complete / snooze /
+retire are multi-target**: the tool also carries an `itemIds` array so "both are done" or "drop those
+two" hits every matched item, not just one (`targetIdsFromRaw` normalizes a lone `itemId` into the
+list; the webhook filters out any hallucinated id against the open list before acting). The prompt
+requires the reply to name exactly the items in `itemIds`, so the confirmation can't drift from what
+actually changed. `update` stays single-target. The system prompt
 encodes Jules-specific rules (which referee for what, the six categories, and the "death zone": an
 important item with no date falls to parking and rots, so anything important should get a deadline). The model is pinned in [src/lib/anthropic.ts](src/lib/anthropic.ts): Haiku is the only
 model called anywhere in the app.
