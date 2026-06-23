@@ -69,6 +69,10 @@ function AddPanel({ onClose }: { onClose: () => void }) {
               <input type="date" name="deadline" />
             </label>
             <label className="ef-field">
+              <span>Time</span>
+              <input type="time" name="dueTime" />
+            </label>
+            <label className="ef-field">
               <span>Repeats</span>
               <select name="cadence" defaultValue="">
                 <option value="">no (one-off)</option>
@@ -80,7 +84,8 @@ function AddPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           <p className="ef-hint">
-            A date makes it a task. Set it to repeat and it becomes a commitment. Neither and it parks.
+            A date makes it a task. Set it to repeat and it becomes a commitment. Neither and it
+            parks. Add a time and Ember pings you at that moment.
           </p>
 
           <div className="ef-actions">

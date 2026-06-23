@@ -21,6 +21,8 @@ export function make(overrides: Partial<Item> = {}): Item {
     status: "open",
     snoozeUntil: null,
     lastNudgedAt: null,
+    dueAt: null,
+    dueNudgedAt: null,
     promisedAt: null,
     doneAt: null,
     lastDoneAt: null,

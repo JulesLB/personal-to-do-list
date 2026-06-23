@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { deriveType } from "@/lib/rank";
+import { deriveType, isoHKT } from "@/lib/rank";
 import { forceAnalysis } from "@/lib/reviewAnalysis";
 import { currentUser } from "@/lib/session";
 import { clampTitle, normalizeCategory } from "@/lib/validate";
@@ -65,7 +65,13 @@ export async function updateItem(id: number, formData: FormData) {
   const cur = await prisma.item.findFirst({ where: { id, userId: me.id } });
   if (!cur) return;
   const deadlineStr = String(formData.get("deadline") ?? "");
-  const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
+  // M8: an optional clock time pins a precise reminder. A time with no date implies
+  // today, so it anchors the deadline to today too (a timed ping is a dated task).
+  const dueTimeStr = String(formData.get("dueTime") ?? "");
+  const dayStr = deadlineStr || (dueTimeStr ? isoHKT(new Date()) : "");
+  const deadline = dayStr ? new Date(dayStr + "T09:00:00+08:00") : null;
+  const dueAt = dueTimeStr && dayStr ? new Date(`${dayStr}T${dueTimeStr}:00+08:00`) : null;
+  const dueAtChanged = (cur.dueAt?.getTime() ?? null) !== (dueAt?.getTime() ?? null);
   const cadence = String(formData.get("cadence") || "") || null;
   const pushedLater =
     !!cur.deadline && !!deadline && deadline.getTime() > cur.deadline.getTime();
@@ -78,6 +84,9 @@ export async function updateItem(id: number, formData: FormData) {
       referee: String(formData.get("referee") || "") || null,
       cadence,
       deadline,
+      dueAt,
+      // Changing the precise time re-arms the ping (clears the once-only stamp).
+      ...(dueAtChanged ? { dueNudgedAt: null } : {}),
       // Setting a concrete date re-engages the item: release any active snooze and
       // the nudge clock so a closer deadline takes effect instead of staying pinned
       // by an old "push it to next week".
@@ -99,7 +108,12 @@ export async function createItem(formData: FormData) {
   const me = await currentUser();
   if (!me) return;
   const deadlineStr = String(formData.get("deadline") ?? "");
-  const deadline = deadlineStr ? new Date(deadlineStr + "T09:00:00+08:00") : null;
+  // M8: a clock time arms a precise ping; with no date it implies today, which also
+  // anchors the deadline so the item is a dated task rather than parking.
+  const dueTimeStr = String(formData.get("dueTime") ?? "");
+  const dayStr = deadlineStr || (dueTimeStr ? isoHKT(new Date()) : "");
+  const deadline = dayStr ? new Date(dayStr + "T09:00:00+08:00") : null;
+  const dueAt = dueTimeStr && dayStr ? new Date(`${dayStr}T${dueTimeStr}:00+08:00`) : null;
   const cadence = String(formData.get("cadence") || "") || null;
   await prisma.item.create({
     data: {
@@ -109,6 +123,7 @@ export async function createItem(formData: FormData) {
       category: normalizeCategory(String(formData.get("category") || "")),
       important: true,
       deadline,
+      dueAt,
       referee: String(formData.get("referee") || "") || null,
       cadence,
     },

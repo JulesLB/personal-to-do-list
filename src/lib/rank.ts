@@ -31,6 +31,20 @@ export const startOfDayHKT = (d: Date) =>
 
 export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
 
+// HH:MM of an instant in HKT, for the board's <input type="time"> (M8 timed nudges).
+export const timeHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(11, 16);
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// A human "now" in HKT for the classifier: date, clock time, and weekday. The
+// router resolves relative dates ("Friday", "tomorrow") and relative/absolute
+// times ("in 2 hours", "at 7pm") against this, so it must carry the time, not just
+// the date — and in HKT, since a UTC date is a day behind before 08:00 HKT.
+export const nowLabelHKT = (d: Date) => {
+  const shifted = new Date(d.getTime() + HK_OFFSET);
+  return `${isoHKT(d)} ${timeHKT(d)} (${WEEKDAYS[shifted.getUTCDay()]}) HKT`;
+};
+
 // Did you tap "I'll do it today" earlier today (HKT)? The evening check uses
 // this to call out a promise you made this morning and haven't kept.
 export function promisedToday(item: Item, now: Date): boolean {

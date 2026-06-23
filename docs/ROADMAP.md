@@ -28,7 +28,7 @@ Status values: `TODO` · `IN PROGRESS` · `DONE` · `PARKED`.
 | M3 | Weekly receipts → Review page | Add | M | P1 | IN PROGRESS · Review page (triage + bonfire) shipped, Sunday digest pending |
 | M5 | First-run activation | Improve | M | P1 | DONE · referee + email capture parked |
 | M6 | Commit templates | Add | S | P2 | TODO |
-| M8 | Deadline-aware nudge timing | Improve | M | P2 | TODO |
+| M8 | Deadline-aware nudge timing | Improve | M | P2 | DONE · code shipped on `feat/m8-timed-nudges`; live once GH secrets `APP_URL`/`CRON_SECRET` are set |
 
 **Sequencing logic.** Cut the noise first (M0–M1: three near-free wins that sharpen the signal before
 anything new lands), then build the one thing that gives Ember a reason to exist (M2), then prove it
@@ -324,7 +324,26 @@ fix for it. Helps the owner too, not only new users.
 
 ## M8 · Deadline-aware nudge timing
 
-**Decision: Improve · Effort: M · Priority: P2 (you moved this last) · Status: TODO · Breaks a constraint**
+**Decision: Improve · Effort: M · Priority: P2 · Status: DONE (code shipped 2026-06-23 on `feat/m8-timed-nudges`; live once GH secrets are set)**
+
+**Shipped.** An item carries an optional precise `dueAt` (separate from the 09:00 day-anchor `deadline`,
+so ranking / heat / digest math is untouched) and fires **one** focused Telegram ping at that instant.
+Pure logic in [src/lib/timed.ts](../src/lib/timed.ts) (`isTimedNudgeDue` with a 1h grace window +
+`dueNudgedAt` idempotency, `buildTimedNudge`); `runTimedSweep` in [src/lib/sweep.ts](../src/lib/sweep.ts);
+`/api/cron?slot=timed` routes to it. The sub-daily trigger is **external** (the constraint broken below):
+a GitHub Action ([.github/workflows/timed-nudges.yml](../.github/workflows/timed-nudges.yml)) hits the
+endpoint every 5 min. One ping per item; the cadence is just the checker waking up. Time captured three
+ways — classifier (`dueTime` HH:MM), the `due <id> YYYY-MM-DD HH:MM` command, and a board time input
+(Add modal + edit panel). The ping's tick uses a distinct `tdone:` callback so it confirms in place
+instead of re-rendering the digest. 7 new tests (`tests/timed.test.ts`); migration
+`20260623000000_item_due_at_timed_nudge` (additive, nullable).
+
+**To go live:** deploy (so `prisma migrate deploy` applies the columns) and add repo secrets `APP_URL` +
+`CRON_SECRET` so the workflow can fire. Until then the scheduler no-ops and the digests are unaffected.
+
+**Original framing below.**
+
+**Decision: Improve · Effort: M · Priority: P2 (you moved this last) · Breaks a constraint**
 
 **Why.** Two fixed crons in [vercel.json](vercel.json) fire at 09:00 and 21:00 HKT, and `runSweep` sends
 the single top item, so a task set for "today at 3pm" is invisible until the next window and there is no
@@ -346,9 +365,9 @@ In exchange you get "ping me when it is actually due," which is table stakes for
 - Keep the two daily digests; add deadline-time pings on top, not instead.
 
 **Definition of done.**
-- [ ] An item due at a specific time gets a nudge near that time, independent of the 09:00 / 21:00 digests.
-- [ ] The two daily digests still work.
-- [ ] The scheduling mechanism is documented (which provider, how it is triggered).
+- [x] An item due at a specific time gets a nudge near that time, independent of the 09:00 / 21:00 digests.
+- [x] The two daily digests still work. *(unchanged — timed pings are additive; all digest tests green)*
+- [x] The scheduling mechanism is documented (GitHub Actions every 5 min → `/api/cron?slot=timed`).
 
 **Touches.** [vercel.json](vercel.json), [src/app/api/cron/route.ts](src/app/api/cron/route.ts),
 [src/lib/sweep.ts](src/lib/sweep.ts), `prisma/schema.prisma` (time-of-day), new scheduler glue.

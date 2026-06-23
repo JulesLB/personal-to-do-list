@@ -13,6 +13,8 @@ export type EditableItem = {
   title: string;
   category: string | null;
   deadline: string | null;
+  // M8: HH:MM (HKT) of the precise reminder time, for the <input type="time">.
+  dueTime: string | null;
   referee: string | null;
   cadence: string | null;
 };
@@ -89,6 +91,10 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
               <input type="date" name="deadline" defaultValue={item.deadline ?? ""} />
             </label>
             <label className="ef-field">
+              <span>Time</span>
+              <input type="time" name="dueTime" defaultValue={item.dueTime ?? ""} />
+            </label>
+            <label className="ef-field">
               <span>Repeats</span>
               <select name="cadence" defaultValue={item.cadence ?? ""}>
                 <option value="">no (one-off)</option>
@@ -100,7 +106,8 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
           </div>
 
           <p className="ef-hint">
-            A date makes it a task. Set it to repeat and it becomes a commitment. Neither and it parks.
+            A date makes it a task. Set it to repeat and it becomes a commitment. Neither and it
+            parks. Add a time and Ember pings you at that moment.
           </p>
 
           <div className="ef-actions">

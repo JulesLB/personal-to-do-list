@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runSweep, type Slot } from "@/lib/sweep";
+import { runSweep, runTimedSweep, type Slot } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,13 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return new NextResponse("unauthorized", { status: 401 });
   }
-  const slot: Slot = req.nextUrl.searchParams.get("slot") === "evening" ? "evening" : "morning";
-  const result = await runSweep(slot);
+  const slotParam = req.nextUrl.searchParams.get("slot");
+  // M8: the external scheduler hits ?slot=timed every 5 min to fire any item
+  // whose precise dueAt has arrived. The two Vercel crons keep using morning/evening.
+  const result =
+    slotParam === "timed"
+      ? await runTimedSweep()
+      : await runSweep(slotParam === "evening" ? "evening" : "morning");
   // Report only safe counters: how many users got a nudge, out of how many.
   return NextResponse.json({ sent: result.sent, users: result.users });
 }

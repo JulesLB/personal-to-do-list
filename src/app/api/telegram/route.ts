@@ -6,7 +6,7 @@ import { interpret, type OpenItemLite } from "@/lib/classify";
 import { createRefereeToken, createLoginLinkToken, passwordMatches } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
-import { deriveType } from "@/lib/rank";
+import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
 import { resolveUser, refereeLabels, isOwnerUser } from "@/lib/user";
 import { botRateLimited, recordBotMessage } from "@/lib/ratelimit";
 import { overMonthlyBudget } from "@/lib/usage";
@@ -22,12 +22,16 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
 const ok = () => NextResponse.json({ ok: true });
 
 // Deadlines live at 09:00 HKT so "due today" never drifts on the UTC server.
 const toDeadline = (d: string | null | undefined) =>
   d ? new Date(d + "T09:00:00+08:00") : null;
+
+// M8: a precise reminder instant. Combine the day (a YYYY-MM-DD, defaulting to
+// today HKT) with a 24h HH:MM clock time, both interpreted in HKT.
+const toDueAt = (day: string | null | undefined, time: string) =>
+  new Date(`${day || isoHKT(new Date())}T${time}:00+08:00`);
 
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
@@ -131,6 +135,21 @@ export async function POST(req: NextRequest) {
         .catch(() => {});
       await logEvent(id, "snoozed");
       await answerCallback(cb.id, `Snoozed to ${snoozeLabel(snz[2])}.`);
+      return ok();
+    }
+
+    // M8: a tick on a timed reminder. Distinct from the digest's `done:` so it
+    // confirms the single ping in place instead of re-rendering the daily digest.
+    const td = String(cb.data ?? "").match(/^tdone:(\d+)$/);
+    if (td) {
+      const id = Number(td[1]);
+      await completeItem(id, user.id).catch(() => {});
+      await answerCallback(cb.id, "Done. 🔥");
+      if (cb.message?.message_id && cb.message.chat?.id != null) {
+        await editMessageText(cb.message.chat.id, cb.message.message_id, "✓ Done. 🔥").catch(
+          () => {}
+        );
+      }
       return ok();
     }
 
@@ -324,10 +343,11 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
-    const due = lower.match(/^\/?due\s+(\d+)\s+(\d{4}-\d{2}-\d{2})/);
+    const due = lower.match(/^\/?due\s+(\d+)\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
     if (due) {
       const id = Number(due[1]);
       const date = new Date(due[2] + "T09:00:00+08:00");
+      const time = due[3] || null; // optional HH:MM → a precise timed ping (M8)
       const cur = await prisma.item.findFirst({ where: { id, userId: user.id } });
       const pushedLater = !!cur?.deadline && date.getTime() > cur.deadline.getTime();
       await prisma.item
@@ -338,12 +358,15 @@ export async function POST(req: NextRequest) {
             type: deriveType(date, cur?.cadence ?? null),
             snoozeUntil: null,
             lastNudgedAt: null,
+            // A clock time arms the timed ping; clear the idempotency stamp so the
+            // new instant can fire. No time given leaves any existing dueAt alone.
+            ...(time ? { dueAt: toDueAt(due[2], time), dueNudgedAt: null } : {}),
             ...(pushedLater ? { deferCount: { increment: 1 } } : {}),
           },
         })
         .catch(() => {});
       if (pushedLater) await logEvent(id, "snoozed");
-      await sendMessage(chatId, `Deadline set on #${id}: ${due[2]}.`);
+      await sendMessage(chatId, `Deadline set on #${id}: ${due[2]}${time ? ` ${time}` : ""}.`);
       return ok();
     }
 
@@ -363,7 +386,7 @@ export async function POST(req: NextRequest) {
     }));
     const openIds = new Set(open.map((i) => i.id));
 
-    const intent = await interpret(text, todayISO(), lite, {
+    const intent = await interpret(text, nowLabelHKT(new Date()), lite, {
       name: user.name ?? undefined,
       refereeLabels: await refereeLabels(user.id),
       userId: user.id,
@@ -438,6 +461,24 @@ export async function POST(req: NextRequest) {
         data.snoozeUntil = null;
         data.lastNudgedAt = null;
       }
+      // M8: a clock time sets/clears the precise dueAt and re-arms the ping. When
+      // there's no day-anchor yet, default it to the ping's day so the item is a
+      // dated task rather than parking.
+      if ("dueTime" in f) {
+        if (f.dueTime) {
+          const day = newDeadline ? isoHKT(newDeadline) : isoHKT(new Date());
+          data.dueAt = toDueAt(day, f.dueTime);
+          data.dueNudgedAt = null;
+          if (!newDeadline) {
+            const dl = toDeadline(day);
+            data.deadline = dl;
+            data.type = deriveType(dl, newCadence);
+          }
+        } else {
+          data.dueAt = null;
+          data.dueNudgedAt = null;
+        }
+      }
       // Shoving the deadline out counts as a deferral.
       const pushedLater =
         "deadline" in f &&
@@ -455,7 +496,10 @@ export async function POST(req: NextRequest) {
 
     // Default: create it. Type falls out of deadline + cadence, never the model's
     // own guess, so the date is the single lever.
-    const newDeadline = toDeadline(f.deadline);
+    // M8: a clock time arms a precise ping; it implies a dated task, so default the
+    // day-anchor deadline to the ping's day when no date was given.
+    const dueAt = f.dueTime ? toDueAt(f.deadline, f.dueTime) : null;
+    const newDeadline = toDeadline(f.deadline) ?? (dueAt ? toDeadline(isoHKT(dueAt)) : null);
     const newCadence = f.cadence ?? null;
     const item = await prisma.item.create({
       data: {
@@ -465,6 +509,7 @@ export async function POST(req: NextRequest) {
         category: normalizeCategory(f.category),
         important: f.important ?? true,
         deadline: newDeadline,
+        dueAt,
         referee: f.referee ?? null,
         cadence: newCadence,
         snoozeUntil: intent.snoozeDays
@@ -477,6 +522,7 @@ export async function POST(req: NextRequest) {
       `${intent.reply}\n#${item.id} · ${item.type}` +
         (item.category ? ` · ${item.category}` : "") +
         (f.deadline ? ` · by ${f.deadline}` : "") +
+        (f.dueTime ? ` · ${f.dueTime}` : "") +
         (item.referee ? ` · ${item.referee}` : "")
     );
     // M5: the first captured item is the activation event. Send the one-time
