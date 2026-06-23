@@ -104,6 +104,15 @@ export default async function GetStarted() {
           to reach your board.
         </p>
       </section>
+
+      <footer className="lp-foot">
+        <span className="lp-foot-meta">
+          Stuck or have a question?{" "}
+          <a href="mailto:jules2lebreton@gmail.com" className="lp-foot-link">
+            Email Jules
+          </a>
+        </span>
+      </footer>
     </div>
   );
 }

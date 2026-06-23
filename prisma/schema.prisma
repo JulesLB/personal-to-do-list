@@ -26,6 +26,7 @@ model User {
   items          Item[]
   referees       Referee[]
   apiUsage       ApiUsage[]
+  feedback       Feedback[]
 }
 
 // PRD-10: per-user referees, replacing the WIFE_WHATSAPP / *_CONSENT env trio.
@@ -96,6 +97,19 @@ model Event {
 model Setting {
   key   String @id
   value String
+}
+
+// Launch-prereq: in-product feedback channel. The bot's `/feedback <msg>` command
+// writes one row per submission; the weekly Sunday digest reads them. Kept off the
+// Event table on purpose — feedback is free text, not an item-scoped audit event.
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Back-office cost/telemetry log: one row per paid external call (Anthropic

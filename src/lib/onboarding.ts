@@ -61,6 +61,6 @@ export function helpMessage(): string {
 • "drop the tax idea" → kills it for good
 
 Commands: list · done <id> · snooze <id> <days> · due <id> YYYY-MM-DD · retire <id>
-Web board: /board · This list: /help
+Web board: /board · Feedback: /feedback <msg> · This list: /help
 Voice notes work everywhere a typed message does.`;
 }

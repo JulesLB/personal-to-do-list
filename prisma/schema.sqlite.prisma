@@ -23,6 +23,7 @@ model User {
   items          Item[]
   referees       Referee[]
   apiUsage       ApiUsage[]
+  feedback       Feedback[]
 }
 
 model Referee {
@@ -84,6 +85,17 @@ model Event {
 model Setting {
   key   String @id
   value String
+}
+
+// Mirror of Feedback in schema.prisma — keep in sync. Launch-prereq feedback channel.
+model Feedback {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Mirror of ApiUsage in schema.prisma — keep in sync. See that file for intent.

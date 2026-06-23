@@ -370,6 +370,22 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
+    // Launch-prereq feedback channel. Anything after `/feedback` is captured raw
+    // (case preserved) for the weekly digest; an empty one just shows the usage.
+    if (/^\/?feedback\b/i.test(text)) {
+      const body = text.replace(/^\/?feedback\b[:\s]*/i, "").trim().slice(0, 2000);
+      if (!body) {
+        await sendMessage(
+          chatId,
+          "Tell me what's working or broken, e.g. `/feedback the burn animation lags on my phone`."
+        );
+        return ok();
+      }
+      await prisma.feedback.create({ data: { userId: user.id, message: body } }).catch(() => {});
+      await sendMessage(chatId, "Got it, thank you. That goes straight to Jules. 🙏");
+      return ok();
+    }
+
     // Freeform fallback: let Claude decide whether this creates a new item or
     // edits an existing one, and which. Exact commands above are the fast paths.
     const open = await prisma.item.findMany({
