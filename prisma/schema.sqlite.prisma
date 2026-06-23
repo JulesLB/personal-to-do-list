@@ -54,6 +54,8 @@ model Item {
   status       String    @default("open")
   snoozeUntil  DateTime?
   lastNudgedAt DateTime?
+  dueAt        DateTime? // M8: precise timed-ping instant, separate from the day-anchor deadline
+  dueNudgedAt  DateTime? // M8: idempotency stamp for the timed ping; cleared when dueAt changes
   promisedAt   DateTime?
   doneAt       DateTime?
   lastDoneAt   DateTime?

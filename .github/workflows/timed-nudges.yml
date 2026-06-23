@@ -1,0 +1,31 @@
+# M8 timed nudges. Vercel Hobby caps scheduled jobs at two (both spent on the
+# morning/evening digests), so the sub-daily check that fires precise dueAt pings
+# runs here instead: every ~15 min this hits /api/cron?slot=timed, which calls
+# runTimedSweep. Each due item pings once (dueNudgedAt guards against repeats), so
+# the 15-min cadence is just how often the checker wakes, not how often you're nagged.
+#
+# Needs two repo secrets (Settings > Secrets and variables > Actions):
+#   APP_URL      e.g. https://ember.vercel.app  (no trailing slash)
+#   CRON_SECRET  the same value set in Vercel, so the endpoint accepts the call
+#
+# Caveat: GitHub's scheduled runner is best-effort (can lag 5-15 min under load and
+# is auto-disabled after 60 days with no repo activity). Fine for personal use; swap
+# to Upstash QStash or cron-job.org if timing reliability ever matters.
+name: Timed nudges
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire due timed nudges
+        run: |
+          curl -fsS -X GET "${APP_URL}/api/cron?slot=timed" \
+            -H "Authorization: Bearer ${CRON_SECRET}"
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

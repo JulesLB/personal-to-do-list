@@ -1,7 +1,7 @@
 import type { Item } from "@prisma/client";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { dueInLabel, commitmentDue, daysOverdue, isoHKT } from "@/lib/rank";
+import { dueInLabel, commitmentDue, daysOverdue, isoHKT, timeHKT } from "@/lib/rank";
 import { triage, BUCKET_WEIGHT } from "@/lib/triage";
 import { weeklyReceipts } from "@/lib/receipts";
 import { readCachedAnalysis, forceAnalysis } from "@/lib/reviewAnalysis";
@@ -18,6 +18,7 @@ const toEditable = (i: Item) => ({
   title: i.title,
   category: i.category,
   deadline: i.deadline ? isoHKT(i.deadline) : null,
+  dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
   referee: i.referee,
   cadence: i.cadence,
 });

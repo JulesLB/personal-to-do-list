@@ -132,7 +132,9 @@ deploy the matching code in the same beat or the live bot breaks on the schema i
 `important` (a single brain-owned judgment; there is no `urgent` flag, urgency comes from the
 deadline alone), `deadline`, `referee`, `category` (six fixed values), `cadence` (commitments only),
 `status` (`open` | `done` | `retired`), `snoozeUntil`, `lastNudgedAt`, `promisedAt` (set when you tap
-"I'll do it today"; the evening check reads it to call out broken promises). Commitments also use `lastDoneAt` (when the current cycle was
+"I'll do it today"; the evening check reads it to call out broken promises), `dueAt` / `dueNudgedAt`
+(M8 — an optional precise ping instant layered on top of the 09:00 day-anchor `deadline`, plus its
+once-only idempotency stamp; see Timed nudges below). Commitments also use `lastDoneAt` (when the current cycle was
 last honored — this, not `lastNudgedAt`, drives cadence-overdue math so nudging never resets the
 clock) and `cycleStreak`. Accountability memory lives in `nudgeCount` / `ignoreCount` (bumped in the
 sweep), a **`deferCount`** (bumped every time you actively push an item away — any snooze, or moving
@@ -256,12 +258,34 @@ owner's Telegram, and logs a `poked` Event. Mint and forward a link by texting t
 `reflink <wife|sister|colleague>`. The board middleware **excludes `/referee`** (the token is the auth,
 the board password isn't involved). New `Event` kinds: `escalation_warned`, `told_referee`, `poked`.
 
+**Timed nudges (M8)** — a precise, sub-daily ping on top of the two digests. An `Item` can carry an
+optional **`dueAt`** (the exact instant to ping) plus **`dueNudgedAt`** (the once-only idempotency
+stamp). `dueAt` is kept **separate from `deadline`** on purpose: all ranking / heat / overdue / digest
+math keys off `deadline` (stored at 09:00 HKT), so timed pings are pure additive metadata and change
+none of it. The pure logic is [src/lib/timed.ts](src/lib/timed.ts): `isTimedNudgeDue(item, now, grace)`
+(open, has `dueAt`, not already pinged, not snoozed, and `now` within `[dueAt, dueAt+1h]` — the grace
+lets a checker waking every ~15 min catch it without firing stale pings hours late; anything older
+falls to the next digest) and `buildTimedNudge` (a single-item ping with one **`tdone:`** tick, distinct
+from the digest's `done:` so the webhook confirms in place rather than re-rendering the whole digest).
+`runTimedSweep` in [sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper: it fires each due item
+once, stamps `dueNudgedAt`, and logs a `nudged` Event with `slot = "timed"` — it does **not** touch the
+digest's accountability counters (a focused ping, not a re-rank). A clock time is captured three ways,
+each setting `dueAt` (and a day-anchor `deadline`, since a timed ping is a dated task) and clearing
+`dueNudgedAt` so a reschedule re-arms: the **classifier** (`dueTime` HH:MM field +
+[classify.ts](src/lib/classify.ts) prompt), the **`due <id> YYYY-MM-DD HH:MM`** command, and a **board
+time input** (the Add modal and edit panel, via `createItem`/`updateItem`).
+
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
 `Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
 the response is just safe counters (`{ sent, users }` — how many users got a nudge, out of how many),
-no chat ids. Reads `?slot=evening` (defaults to morning). Two jobs in
+no chat ids. Reads `?slot=evening` / `?slot=timed` (defaults to morning). Two jobs in
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
-Two once-daily jobs fit the Vercel Hobby limit. `vercel.json` also pins **`regions: ["icn1"]`**
+Two once-daily jobs fit the Vercel Hobby limit, so the **timed slot is driven by an external
+scheduler** instead — a GitHub Action ([.github/workflows/timed-nudges.yml](.github/workflows/timed-nudges.yml))
+hits `/api/cron?slot=timed` every ~15 min (needs repo secrets `APP_URL` + `CRON_SECRET`; until they're
+set the scheduler no-ops and the digests are unaffected). GitHub's cron is best-effort (can lag, auto-
+disables after 60 days idle) — swap to QStash/cron-job.org if timing reliability matters. `vercel.json`
+also pins **`regions: ["icn1"]`**
 (Seoul) so every serverless function runs in the same region as the Supabase DB (`ap-northeast-2`);
 without it Vercel defaults to US-East and each DB round trip crosses the Pacific (the board fires
 several per interaction) — that was the main source of board lag.

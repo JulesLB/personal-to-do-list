@@ -31,6 +31,9 @@ export const startOfDayHKT = (d: Date) =>
 
 export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
 
+// HH:MM of an instant in HKT, for the board's <input type="time"> (M8 timed nudges).
+export const timeHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(11, 16);
+
 // Did you tap "I'll do it today" earlier today (HKT)? The evening check uses
 // this to call out a promise you made this morning and haven't kept.
 export function promisedToday(item: Item, now: Date): boolean {

@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { sendMessage, type InlineKeyboard } from "./telegram";
 import { buildDailyNudge, type Slot } from "./nudge";
+import { isTimedNudgeDue, buildTimedNudge } from "./timed";
 import { isCritical, startOfDayHKT } from "./rank";
 import { escalationStep, type EscalationStep } from "./escalate";
 import { getReferee, isOptedInReferee, canAutoSend, sendToReferee } from "./referee";
@@ -142,6 +143,41 @@ export async function runSweep(
   let sent = 0;
   for (const user of users) {
     if (await sweepUser(user, now, slot, send)) sent++;
+  }
+  return { sent, users: users.length };
+}
+
+// M8 timed nudges. Driven by an external scheduler (a GitHub Action hitting
+// /api/cron?slot=timed every ~15 min) because Vercel Hobby's two crons are both
+// spent on the morning/evening digests. Fires each user's items whose precise
+// dueAt has just arrived, exactly once (dueNudgedAt is the idempotency stamp).
+// Independent of the digests and their accountability bookkeeping: a focused
+// single-item ping, not a re-rank.
+export async function runTimedSweep(
+  now: Date = new Date(),
+  send: Sender = sendMessage
+): Promise<{ sent: number; users: number }> {
+  const users = await prisma.user.findMany();
+  let sent = 0;
+  for (const user of users) {
+    // Pre-filter in the DB; isTimedNudgeDue applies the time window + snooze.
+    const due = await prisma.item.findMany({
+      where: { status: "open", userId: user.id, dueAt: { not: null }, dueNudgedAt: null },
+    });
+    for (const item of due) {
+      if (!isTimedNudgeDue(item, now)) continue;
+      // One bad send shouldn't abort the rest of the sweep; an unstamped item just
+      // retries on the next ~15-min tick (still inside the grace window).
+      try {
+        const nudge = buildTimedNudge(item, now);
+        await send(user.telegramChatId, nudge.text, nudge.keyboard);
+        await prisma.item.update({ where: { id: item.id }, data: { dueNudgedAt: now } });
+        await prisma.event.create({ data: { itemId: item.id, kind: "nudged", slot: "timed" } });
+        sent++;
+      } catch {
+        // best-effort; leave dueNudgedAt unset so the next tick re-attempts
+      }
+    }
   }
   return { sent, users: users.length };
 }

@@ -60,6 +60,12 @@ model Item {
   status       String    @default("open") // open | done | retired
   snoozeUntil  DateTime?
   lastNudgedAt DateTime?
+  // M8 timed nudges: an optional precise instant to ping, on top of the 09:00
+  // day-anchor `deadline`. Kept separate so ranking/heat/digest math (all keyed
+  // off `deadline`) is untouched. dueNudgedAt is the idempotency stamp: set when
+  // the timed ping fired so it never double-sends; cleared whenever dueAt changes.
+  dueAt        DateTime?
+  dueNudgedAt  DateTime?
   promisedAt   DateTime? // set when you tap "I'll do it today"; evening check calls out broken promises
   doneAt       DateTime?
   lastDoneAt   DateTime? // commitments: when the current cycle was last honored; drives cadence-overdue math

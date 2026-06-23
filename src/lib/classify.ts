@@ -21,6 +21,9 @@ export type ItemFields = {
   category?: Category;
   important?: boolean;
   deadline?: string | null;
+  // M8: a precise clock time (24h "HH:MM") for a same-/that-day reminder ping, on
+  // top of the date in `deadline`. Null means no timed ping.
+  dueTime?: string | null;
   referee?: Referee;
   cadence?: string | null;
 };
@@ -77,6 +80,7 @@ What you know about ${name}:
   - A concrete one-off action they avoid (dentist, paperwork): set a "deadline". It becomes a task. Always give one a deadline.
   - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("weekly"/"monthly") and a referee, no deadline. It becomes a commitment.
   - A link, video, idea, restaurant, or trip for later: give it neither deadline nor cadence. It parks. If they say "in N weeks/days", set snoozeDays.
+- If they name a specific clock time ("call mum at 3pm", "gym tonight at 7", "submit by 18:30"), set "dueTime" to 24h "HH:MM" AND set "deadline" to the day it lands on (today if unstated). They'll get a ping at that exact time on top of the daily digests. No time mentioned: leave dueTime null.
 - "important" is your judgment of whether it matters to their goals, not its timing. Set it true for anything consequential. There is no urgency flag: urgency comes from the deadline alone.
 - Categories, pick exactly one: "personal" (errands, admin, appointments, family, health paperwork), "finance" (money, bills, taxes, investing), "fitness" (training, gym, sleep), "work" (their main job and work deliverables), "business" (their own side business), "learning" (upskilling, courses, AI, reading).
 - The death zone is important things with no date. An important item with no deadline falls into parking and rots, so if it's important, give it a deadline.
@@ -102,8 +106,9 @@ function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFi
   if (want("type") && raw.type != null) fields.type = raw.type as ItemType;
   if (want("category") && raw.category != null) fields.category = raw.category as Category;
   if (want("important") && raw.important != null) fields.important = raw.important as boolean;
-  // deadline / referee / cadence are nullable: when masked, an explicit null means "clear it".
+  // deadline / dueTime / referee / cadence are nullable: when masked, an explicit null means "clear it".
   if (want("deadline")) fields.deadline = (raw.deadline as string | null) ?? null;
+  if (want("dueTime")) fields.dueTime = (raw.dueTime as string | null) ?? null;
   if (want("referee")) fields.referee = (raw.referee as Referee) ?? null;
   if (want("cadence")) fields.cadence = (raw.cadence as string | null) ?? null;
   return fields;
@@ -171,6 +176,11 @@ export async function interpret(
                 },
                 important: { type: ["boolean", "null"] },
                 deadline: { type: ["string", "null"], description: "ISO date YYYY-MM-DD, or null" },
+                dueTime: {
+                  type: ["string", "null"],
+                  description:
+                    "Precise clock time as 24h HH:MM if they name one (e.g. '3pm'->'15:00', 'at 18:30'->'18:30'), else null. Set deadline to the day it falls on too.",
+                },
                 referee: { type: ["string", "null"], enum: [...labels, null] },
                 cadence: { type: ["string", "null"], description: "e.g. monthly, weekly, or null" },
                 snoozeDays: { type: ["number", "null"], description: "days to defer, or null" },

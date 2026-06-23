@@ -1,6 +1,6 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, timeHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
@@ -17,6 +17,7 @@ const toEditable = (i: Item): EditableItem => ({
   title: i.title,
   category: i.category,
   deadline: i.deadline ? isoHKT(i.deadline) : null,
+  dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
   referee: i.referee,
   cadence: i.cadence,
 });
