@@ -68,19 +68,45 @@ const hktAt9 = (y: number, m: number, day: number) => new Date(Date.UTC(y, m, da
 
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 
-// When a commitment is next due: its anchor (last honored, or created if never)
-// plus one cadence period, calendar-accurate. Weekly lands on the same weekday;
-// monthly keeps the same day-of-month, clamped to the target month's length so
-// 31 Jan -> 28 Feb. Keys off lastDoneAt, not lastNudgedAt, so nudging never
-// resets the clock and honoring a cycle pushes the due date out by a full period.
+// The k-th scheduled occurrence counting from a base calendar day (k = 0 is the
+// base day itself), calendar-accurate and drift-free: monthly re-derives from the
+// original day-of-month every step, so a run anchored on the 31st stays on the
+// 31st (clamped per short month, 31 Jan -> 28 Feb) instead of walking back to the
+// 28th and staying there; weekly steps the weekday by sevens; daily by ones.
+function cadenceOccurrence(
+  base: { y: number; m: number; day: number },
+  cadence: string | null,
+  k: number
+): Date {
+  if (cadence === "daily") return hktAt9(base.y, base.m, base.day + k);
+  if (cadence === "weekly") return hktAt9(base.y, base.m, base.day + 7 * k);
+  const month = base.m + k;
+  const year = base.y + Math.floor(month / 12);
+  const m = ((month % 12) + 12) % 12;
+  return hktAt9(year, m, Math.min(base.day, daysInMonth(year, m)));
+}
+
+// When a commitment is next due. The day-of-month / weekday is anchored on the
+// stored deadline (what you actually committed to), so honoring a cycle a few days
+// late doesn't drift the date off the 1st. A not-yet-honored commitment sits on
+// its deadline as-is (honestly overdue once it passes); once honored it rolls to
+// the first occurrence after lastDoneAt. Keys off lastDoneAt, not lastNudgedAt, so
+// nudging never resets the clock. Legacy rows with no deadline keep the original
+// behavior: one cadence period past the last completion (or creation).
 export function commitmentDue(item: Item): Date {
-  const { y, m, day } = hktYMD(item.lastDoneAt ?? item.createdAt);
-  if (item.cadence === "daily") return hktAt9(y, m, day + 1);
-  if (item.cadence === "weekly") return hktAt9(y, m, day + 7);
-  const nm = m + 1;
-  const year = y + Math.floor(nm / 12);
-  const month = ((nm % 12) + 12) % 12;
-  return hktAt9(year, month, Math.min(day, daysInMonth(year, month)));
+  if (item.deadline) {
+    const base = hktYMD(item.deadline);
+    let k = 0;
+    let due = cadenceOccurrence(base, item.cadence, 0);
+    // Advance only once honored, to the first occurrence strictly after it. The
+    // guard is a safety cap; in practice k is 0 (not yet done) or 1 (done on time).
+    while (item.lastDoneAt && due.getTime() <= item.lastDoneAt.getTime() && k < 2400) {
+      k += 1;
+      due = cadenceOccurrence(base, item.cadence, k);
+    }
+    return due;
+  }
+  return cadenceOccurrence(hktYMD(item.lastDoneAt ?? item.createdAt), item.cadence, 1);
 }
 
 // One more period past the due date: the "you skipped a whole extra cycle" line.

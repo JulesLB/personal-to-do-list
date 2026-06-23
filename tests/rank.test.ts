@@ -216,4 +216,83 @@ describe("commitmentDue (calendar-accurate)", () => {
     expect(label).toContain("due 9 May");
     expect(label).toContain("overdue");
   });
+
+  // The recurring-date fix: the day-of-month is anchored on the stored deadline,
+  // not on when the item was created or last tapped. These are the two real items
+  // (created 22 Jun) that were both showing "due in 29 days" before the fix.
+  it("a not-yet-done commitment is due on its deadline, not created + a period", () => {
+    const rent = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-07-01"),
+      lastDoneAt: null,
+      createdAt: at9("2026-06-22"),
+    });
+    expect(commitmentDue(rent).toISOString()).toBe(at9("2026-07-01").toISOString());
+  });
+
+  it("a not-yet-done monthly due tomorrow reads its deadline, not the creation month", () => {
+    const birdie = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-06-24"),
+      lastDoneAt: null,
+      createdAt: at9("2026-06-22"),
+    });
+    expect(commitmentDue(birdie).toISOString()).toBe(at9("2026-06-24").toISOString());
+  });
+
+  it("honoring a cycle on time rolls to the same day next month", () => {
+    const birdie = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-06-24"),
+      lastDoneAt: at9("2026-06-24"),
+    });
+    expect(commitmentDue(birdie).toISOString()).toBe(at9("2026-07-24").toISOString());
+  });
+
+  it("honoring a cycle late keeps the next due on the deadline's day, not the tap day", () => {
+    // Due the 24th, paid two days late on the 26th: next is 24 Jul, not 26 Jul.
+    const birdie = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-06-24"),
+      lastDoneAt: at9("2026-06-26"),
+    });
+    expect(commitmentDue(birdie).toISOString()).toBe(at9("2026-07-24").toISOString());
+  });
+
+  it("a weekly commitment honored late keeps its weekday (deadline + 7, not tap + 7)", () => {
+    // Due 26 Jun, done 2 days late on the 28th: next is 3 Jul (26 + 7), not 5 Jul.
+    const c = make({
+      type: "commitment",
+      cadence: "weekly",
+      deadline: at9("2026-06-26"),
+      lastDoneAt: at9("2026-06-28"),
+    });
+    expect(commitmentDue(c).toISOString()).toBe(at9("2026-07-03").toISOString());
+  });
+
+  it("a not-yet-done commitment past its deadline stays on that date (honestly overdue)", () => {
+    const c = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-06-01"),
+      lastDoneAt: null,
+    });
+    expect(commitmentDue(c).toISOString()).toBe(at9("2026-06-01").toISOString());
+  });
+
+  it("labels a not-yet-due commitment with its deadline and no 'overdue'", () => {
+    const rent = make({
+      type: "commitment",
+      cadence: "monthly",
+      deadline: at9("2026-07-01"),
+      lastDoneAt: null,
+    });
+    const label = commitmentDueLabel(rent, NOW);
+    expect(label).toContain("due 1 Jul");
+    expect(label).not.toContain("overdue");
+  });
 });
