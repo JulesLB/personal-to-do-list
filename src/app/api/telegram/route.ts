@@ -6,7 +6,7 @@ import { interpret, type OpenItemLite } from "@/lib/classify";
 import { createRefereeToken, createLoginLinkToken, passwordMatches } from "@/lib/auth";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
-import { deriveType, isoHKT } from "@/lib/rank";
+import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
 import { resolveUser, refereeLabels, isOwnerUser } from "@/lib/user";
 import { botRateLimited, recordBotMessage } from "@/lib/ratelimit";
 import { overMonthlyBudget } from "@/lib/usage";
@@ -22,7 +22,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
 const ok = () => NextResponse.json({ ok: true });
 
 // Deadlines live at 09:00 HKT so "due today" never drifts on the UTC server.
@@ -387,7 +386,7 @@ export async function POST(req: NextRequest) {
     }));
     const openIds = new Set(open.map((i) => i.id));
 
-    const intent = await interpret(text, todayISO(), lite, {
+    const intent = await interpret(text, nowLabelHKT(new Date()), lite, {
       name: user.name ?? undefined,
       refereeLabels: await refereeLabels(user.id),
       userId: user.id,

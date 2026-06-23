@@ -7,6 +7,7 @@ process.env.DATABASE_URL = "file:./dev.db";
 async function main() {
   const { PrismaClient } = await import("@prisma/client");
   const { interpret } = await import("../src/lib/classify");
+  const { nowLabelHKT } = await import("../src/lib/rank");
 
   const msg = process.argv.slice(2).join(" ").trim();
   if (!msg) {
@@ -15,7 +16,7 @@ async function main() {
   }
 
   const prisma = new PrismaClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const now = nowLabelHKT(new Date());
   const open = await prisma.item.findMany({ where: { status: "open" }, orderBy: { id: "asc" } });
   const lite = open.map((i) => ({
     id: i.id,
@@ -30,7 +31,7 @@ async function main() {
   for (const i of lite) console.log(`  #${i.id} ${i.title} [${i.type}]`);
   console.log(`\nYou said: "${msg}"\n`);
 
-  const intent = await interpret(msg, today, lite);
+  const intent = await interpret(msg, now, lite);
   console.log("Router decided:");
   console.log(JSON.stringify(intent, null, 2));
   console.log(`\nReply it would send: ${intent.reply}`);

@@ -80,7 +80,13 @@ What you know about ${name}:
   - A concrete one-off action they avoid (dentist, paperwork): set a "deadline". It becomes a task. Always give one a deadline.
   - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("weekly"/"monthly") and a referee, no deadline. It becomes a commitment.
   - A link, video, idea, restaurant, or trip for later: give it neither deadline nor cadence. It parks. If they say "in N weeks/days", set snoozeDays.
-- If they name a specific clock time ("call mum at 3pm", "gym tonight at 7", "submit by 18:30"), set "dueTime" to 24h "HH:MM" AND set "deadline" to the day it lands on (today if unstated). They'll get a ping at that exact time on top of the daily digests. No time mentioned: leave dueTime null.
+- Timed pings: if the message carries ANY time-of-day signal, set "dueTime" to a 24h "HH:MM" and set "deadline" to the date that time lands on. They get one ping at that instant on top of the daily digests. Resolve everything against NOW (Hong Kong time), and always to the soonest FUTURE instant:
+  - Absolute clock time ("at 3pm" -> "15:00", "by 18:30" -> "18:30", "7 in the morning" -> "07:00").
+  - Relative offset ("in 2 hours", "in 30 min", "in 90 minutes"): add it to NOW's clock time. If it crosses midnight, set "deadline" to the next day.
+  - Named part of day: "tonight"/"this evening" -> "19:00", "this afternoon" -> "14:00", "midday"/"noon" -> "12:00", "morning" -> "09:00", "first thing tomorrow" -> next day "09:00".
+  - A bare time already past for today (e.g. it's 20:00 and they say "at 7pm") means tomorrow: set "deadline" to the next day.
+  - "by <day>" with no clock time is a date, not a timed ping: set "deadline" only, leave "dueTime" null. A pure date ("Friday", "next week") is the same: deadline only.
+  - No time signal at all: leave "dueTime" null.
 - "important" is your judgment of whether it matters to their goals, not its timing. Set it true for anything consequential. There is no urgency flag: urgency comes from the deadline alone.
 - Categories, pick exactly one: "personal" (errands, admin, appointments, family, health paperwork), "finance" (money, bills, taxes, investing), "fitness" (training, gym, sleep), "work" (their main job and work deliverables), "business" (their own side business), "learning" (upskilling, courses, AI, reading).
 - The death zone is important things with no date. An important item with no deadline falls into parking and rots, so if it's important, give it a deadline.
@@ -96,7 +102,7 @@ Deciding the action:
 
 Resolving the target: match against the OPEN ITEMS list by title and context. Only set itemId to an id that appears in that list. If nothing matches an edit-style request, treat it as a create instead.
 
-reply: a dry, direct one-line confirmation of what you did, echoing the concrete change ("Moved 'dentist' to Fri 20 Jun, marked urgent"). For clarify, it's the question. At most one emoji, no fluff. Resolve relative dates against TODAY.`;
+reply: a dry, direct one-line confirmation of what you did, echoing the concrete change ("Moved 'dentist' to Fri 20 Jun, 7pm"). For clarify, it's the question. At most one emoji, no fluff. Resolve all relative dates and times against NOW (Hong Kong time).`;
 }
 
 function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFields {
@@ -116,7 +122,7 @@ function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFi
 
 export async function interpret(
   text: string,
-  today: string,
+  now: string,
   openItems: OpenItemLite[],
   ctx: ClassifyContext = {}
 ): Promise<Intent> {
@@ -145,7 +151,7 @@ export async function interpret(
         messages: [
           {
             role: "user",
-            content: `TODAY is ${today}.\n\nOPEN ITEMS:\n${open}\n\nMessage: ${text}`,
+            content: `NOW is ${now}.\n\nOPEN ITEMS:\n${open}\n\nMessage: ${text}`,
           },
         ],
         tools: [
