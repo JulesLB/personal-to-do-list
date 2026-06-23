@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse("unauthorized", { status: 401 });
   }
   const slotParam = req.nextUrl.searchParams.get("slot");
-  // M8: the external scheduler hits ?slot=timed every ~15 min to fire any item
+  // M8: the external scheduler hits ?slot=timed every 5 min to fire any item
   // whose precise dueAt has arrived. The two Vercel crons keep using morning/evening.
   const result =
     slotParam === "timed"

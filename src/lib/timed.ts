@@ -10,7 +10,7 @@ import type { Item } from "@prisma/client";
 const HOUR = 60 * 60 * 1000;
 
 // A timed ping is only valid inside a short window opening at dueAt. The grace
-// covers a checker that wakes every ~15 min, so a ping isn't missed between ticks;
+// covers a checker that wakes every 5 min, so a ping isn't missed between ticks;
 // anything older than the grace is left to the next digest rather than firing a
 // stale "due now" hours late. (A downed scheduler degrades to the digest.)
 export const TIMED_GRACE_MS = HOUR;

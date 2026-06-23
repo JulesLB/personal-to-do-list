@@ -1,21 +1,23 @@
 # M8 timed nudges. Vercel Hobby caps scheduled jobs at two (both spent on the
 # morning/evening digests), so the sub-daily check that fires precise dueAt pings
-# runs here instead: every ~15 min this hits /api/cron?slot=timed, which calls
+# runs here instead: every 5 min this hits /api/cron?slot=timed, which calls
 # runTimedSweep. Each due item pings once (dueNudgedAt guards against repeats), so
-# the 15-min cadence is just how often the checker wakes, not how often you're nagged.
+# the 5-min cadence is just how often the checker wakes, not how often you're nagged.
+# 5 min is GitHub's minimum schedule interval; the repo is public, so Actions
+# minutes are free and unlimited.
 #
 # Needs two repo secrets (Settings > Secrets and variables > Actions):
 #   APP_URL      e.g. https://ember.vercel.app  (no trailing slash)
 #   CRON_SECRET  the same value set in Vercel, so the endpoint accepts the call
 #
-# Caveat: GitHub's scheduled runner is best-effort (can lag 5-15 min under load and
+# Caveat: GitHub's scheduled runner is best-effort (can lag a few min under load and
 # is auto-disabled after 60 days with no repo activity). Fine for personal use; swap
 # to Upstash QStash or cron-job.org if timing reliability ever matters.
 name: Timed nudges
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:

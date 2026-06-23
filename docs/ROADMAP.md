@@ -332,7 +332,7 @@ Pure logic in [src/lib/timed.ts](../src/lib/timed.ts) (`isTimedNudgeDue` with a 
 `dueNudgedAt` idempotency, `buildTimedNudge`); `runTimedSweep` in [src/lib/sweep.ts](../src/lib/sweep.ts);
 `/api/cron?slot=timed` routes to it. The sub-daily trigger is **external** (the constraint broken below):
 a GitHub Action ([.github/workflows/timed-nudges.yml](../.github/workflows/timed-nudges.yml)) hits the
-endpoint every ~15 min. One ping per item; the cadence is just the checker waking up. Time captured three
+endpoint every 5 min. One ping per item; the cadence is just the checker waking up. Time captured three
 ways — classifier (`dueTime` HH:MM), the `due <id> YYYY-MM-DD HH:MM` command, and a board time input
 (Add modal + edit panel). The ping's tick uses a distinct `tdone:` callback so it confirms in place
 instead of re-rendering the digest. 7 new tests (`tests/timed.test.ts`); migration
@@ -367,7 +367,7 @@ In exchange you get "ping me when it is actually due," which is table stakes for
 **Definition of done.**
 - [x] An item due at a specific time gets a nudge near that time, independent of the 09:00 / 21:00 digests.
 - [x] The two daily digests still work. *(unchanged — timed pings are additive; all digest tests green)*
-- [x] The scheduling mechanism is documented (GitHub Actions every ~15 min → `/api/cron?slot=timed`).
+- [x] The scheduling mechanism is documented (GitHub Actions every 5 min → `/api/cron?slot=timed`).
 
 **Touches.** [vercel.json](vercel.json), [src/app/api/cron/route.ts](src/app/api/cron/route.ts),
 [src/lib/sweep.ts](src/lib/sweep.ts), `prisma/schema.prisma` (time-of-day), new scheduler glue.

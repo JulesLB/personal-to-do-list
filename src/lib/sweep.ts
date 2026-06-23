@@ -148,7 +148,7 @@ export async function runSweep(
 }
 
 // M8 timed nudges. Driven by an external scheduler (a GitHub Action hitting
-// /api/cron?slot=timed every ~15 min) because Vercel Hobby's two crons are both
+// /api/cron?slot=timed every 5 min) because Vercel Hobby's two crons are both
 // spent on the morning/evening digests. Fires each user's items whose precise
 // dueAt has just arrived, exactly once (dueNudgedAt is the idempotency stamp).
 // Independent of the digests and their accountability bookkeeping: a focused
@@ -167,7 +167,7 @@ export async function runTimedSweep(
     for (const item of due) {
       if (!isTimedNudgeDue(item, now)) continue;
       // One bad send shouldn't abort the rest of the sweep; an unstamped item just
-      // retries on the next ~15-min tick (still inside the grace window).
+      // retries on the next 5-min tick (still inside the grace window).
       try {
         const nudge = buildTimedNudge(item, now);
         await send(user.telegramChatId, nudge.text, nudge.keyboard);

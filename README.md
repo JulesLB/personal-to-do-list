@@ -32,7 +32,7 @@ So Ember spends almost none of its effort on storage and almost all of it on nag
 2. **Classify.** Claude turns it into a structured item: category, importance, deadline, referee, and whether it repeats. The type (task, commitment, or parking) is derived from the date and cadence, never chosen. A deadline makes it a task, a repeat makes it a commitment, neither parks it.
 3. **Rank.** Everything sorts by due date, with importance breaking ties on the same day. No quadrants. The app sets the order.
 4. **See.** The web board opens with a streak chip, the burning item as a hero, then everything else in bands (on fire, heating up, back burner) with a quiet parking lot at the bottom. Tap a row to edit any field.
-5. **Nudge.** Two daily crons send a digest of what's overdue and what's due today, 3 per section and the rest as "+N more." The morning is a plain preview. The evening wrap-up numbers each item with one-tap done buttons and cheers a day you fully cleared. Both stay silent when nothing's due.
+5. **Nudge.** Two daily crons send a digest of what's overdue and what's due today, 3 per section and the rest as "+N more." The morning is a plain preview. The evening wrap-up numbers each item with one-tap done buttons and cheers a day you fully cleared. Both stay silent when nothing's due. Name a time ("remind me at 7pm", "in 2 hours") and you get one extra ping at that moment, on top of the digests.
 6. **Escalate.** A task 3+ days late, or a commitment skipped two cycles running, leads with a pre-drafted WhatsApp message to a referee you named at capture. (Currently behind a flag until WhatsApp auto-send is wired up.)
 7. **Close.** Tap done (the card burns to ash) or reply `done <id>`. A one-off closes for good. A commitment honors the cycle and resurfaces later.
 8. **Reflect.** The Review page reads your week back: a scoreboard of what's slipping and a short coach's take, refreshed on demand.
@@ -64,7 +64,7 @@ Tap the buttons on the daily nudge, or type:
 | `list` | shows open items |
 | `done <id>` | completes it (a commitment is honored for this cycle and resurfaces later) |
 | `snooze <id> <days>` | defers it |
-| `due <id> YYYY-MM-DD` | sets a deadline |
+| `due <id> YYYY-MM-DD [HH:MM]` | sets a deadline, and an exact reminder time if you add one |
 | `retire <id>` | ends a commitment for good |
 
 ## What it deliberately doesn't do

@@ -264,7 +264,7 @@ stamp). `dueAt` is kept **separate from `deadline`** on purpose: all ranking / h
 math keys off `deadline` (stored at 09:00 HKT), so timed pings are pure additive metadata and change
 none of it. The pure logic is [src/lib/timed.ts](src/lib/timed.ts): `isTimedNudgeDue(item, now, grace)`
 (open, has `dueAt`, not already pinged, not snoozed, and `now` within `[dueAt, dueAt+1h]` — the grace
-lets a checker waking every ~15 min catch it without firing stale pings hours late; anything older
+lets a checker waking every 5 min catch it without firing stale pings hours late; anything older
 falls to the next digest) and `buildTimedNudge` (a single-item ping with one **`tdone:`** tick, distinct
 from the digest's `done:` so the webhook confirms in place rather than re-rendering the whole digest).
 `runTimedSweep` in [sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper: it fires each due item
@@ -282,9 +282,10 @@ no chat ids. Reads `?slot=evening` / `?slot=timed` (defaults to morning). Two jo
 [vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
 Two once-daily jobs fit the Vercel Hobby limit, so the **timed slot is driven by an external
 scheduler** instead — a GitHub Action ([.github/workflows/timed-nudges.yml](.github/workflows/timed-nudges.yml))
-hits `/api/cron?slot=timed` every ~15 min (needs repo secrets `APP_URL` + `CRON_SECRET`; until they're
-set the scheduler no-ops and the digests are unaffected). GitHub's cron is best-effort (can lag, auto-
-disables after 60 days idle) — swap to QStash/cron-job.org if timing reliability matters. `vercel.json`
+hits `/api/cron?slot=timed` every 5 min (GitHub's minimum; free + unlimited since the repo is public).
+Needs repo secrets `APP_URL` + `CRON_SECRET`; until they're set the scheduler no-ops and the digests are
+unaffected. GitHub's cron is best-effort (can lag, auto-disables after 60 days idle) — swap to
+QStash/cron-job.org if timing reliability matters. `vercel.json`
 also pins **`regions: ["icn1"]`**
 (Seoul) so every serverless function runs in the same region as the Supabase DB (`ap-northeast-2`);
 without it Vercel defaults to US-East and each DB round trip crosses the Pacific (the board fires
