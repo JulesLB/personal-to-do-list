@@ -20,9 +20,9 @@ const SECTION_CAP = 3;
 export type Slot = "morning" | "evening";
 export type DailyNudge = { text: string; keyboard?: InlineKeyboard; topId: number };
 
-// One-line meta under a title: when (overdue only), cadence. Category is omitted
-// (the dot it stood for carried no decision). The due date is shown only when it
-// adds something: in the Overdue section the "Nd overdue" reads, but under "Due
+// One-line meta under a title: when (overdue only), cadence. The due date is
+// shown only when it adds something: in the Overdue section the "Nd overdue"
+// reads, but under "Due
 // today" every item is due today, so repeating it is just noise — there showDate
 // is false and a plain task collapses to its bare title.
 function metaLine(it: Item, now: Date, showDate: boolean): string {

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { deriveType, isoHKT } from "@/lib/rank";
 import { forceAnalysis } from "@/lib/reviewAnalysis";
 import { currentUser } from "@/lib/session";
-import { clampTitle, normalizeCategory } from "@/lib/validate";
+import { clampTitle } from "@/lib/validate";
 
 // Both control surfaces read the same items, so every mutation refreshes both the
 // board and the Review page.
@@ -51,7 +51,7 @@ export async function retire(id: number) {
   revalidateBoards();
 }
 
-// Edit the fields you control: title, category, referee, deadline, and whether it
+// Edit the fields you control: title, referee, deadline, and whether it
 // repeats (cadence). Type is derived from deadline+cadence, never set by hand, and
 // "important" is brain-owned so the panel leaves it alone. Deadlines are stored at
 // 09:00 HKT. Empty selects/date clear the field; a blank title is ignored so a
@@ -80,7 +80,6 @@ export async function updateItem(id: number, formData: FormData) {
     data: {
       title,
       type: deriveType(deadline, cadence),
-      category: normalizeCategory(String(formData.get("category") || "")),
       referee: String(formData.get("referee") || "") || null,
       cadence,
       deadline,
@@ -120,7 +119,6 @@ export async function createItem(formData: FormData) {
       userId: me.id,
       title,
       type: deriveType(deadline, cadence),
-      category: normalizeCategory(String(formData.get("category") || "")),
       important: true,
       deadline,
       dueAt,

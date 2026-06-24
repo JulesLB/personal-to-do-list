@@ -16,7 +16,6 @@ export const dynamic = "force-dynamic";
 const toEditable = (i: Item) => ({
   id: i.id,
   title: i.title,
-  category: i.category,
   deadline: i.deadline ? isoHKT(i.deadline) : null,
   dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
   referee: i.referee,
@@ -84,7 +83,6 @@ export default async function Review() {
       bucket,
       weight: BUCKET_WEIGHT[bucket],
       title: item.title,
-      category: item.category,
       referee: item.referee,
       due,
       detail,

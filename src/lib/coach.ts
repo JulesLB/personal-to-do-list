@@ -78,8 +78,7 @@ export function coachContext(
             (Number.isFinite(od) && od > 0 ? `, ${od}d overdue` : "") +
             (item.referee ? `, referee:${item.referee}` : ", no referee") +
             (item.deferCount > 0 ? `, pushed ${item.deferCount}x` : "") +
-            `, nudged ${item.nudgeCount}x, ignored ${item.ignoreCount}x` +
-            `, category:${item.category ?? "none"}`
+            `, nudged ${item.nudgeCount}x, ignored ${item.ignoreCount}x`
           );
         })
         .join("\n")

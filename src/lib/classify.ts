@@ -1,14 +1,6 @@
 import { anthropic, MODELS } from "./anthropic";
 import { track, usageFromAnthropic } from "./usage";
 
-export type Category =
-  | "personal"
-  | "finance"
-  | "fitness"
-  | "work"
-  | "business"
-  | "learning";
-
 export type ItemType = "task" | "commitment" | "parking";
 // Referee labels are per-user now (PRD-10), so the field is an open string.
 export type Referee = string | null;
@@ -18,7 +10,6 @@ export type Referee = string | null;
 export type ItemFields = {
   title?: string;
   type?: ItemType;
-  category?: Category;
   important?: boolean;
   deadline?: string | null;
   // M8: a precise clock time (24h "HH:MM") for a same-/that-day reminder ping, on
@@ -77,7 +68,6 @@ export type OpenItemLite = {
   id: number;
   title: string;
   type: string;
-  category: string | null;
   referee: string | null;
   deadline: string | null;
 };
@@ -93,7 +83,7 @@ What you know about ${name}:
 - ${refLine}
 - Type is NOT set directly; it's derived from what you give the item. So decide the shape by setting the right field:
   - A concrete one-off action they avoid (dentist, paperwork): set a "deadline". It becomes a task. Always give one a deadline.
-  - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("weekly"/"monthly") and a referee, no deadline. It becomes a commitment.
+  - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("daily"/"weekly"/"monthly") and a referee. It becomes a commitment. If it names a SPECIFIC day it lands on (a weekday like "every Monday", or a day-of-month like "first of the month", "the 15th", "end of each month"), ALSO set "deadline" to the NEXT future date that matches that day — the deadline anchors which day each cycle falls on. Resolve it against NOW: "first of the month" when today is 24 Jun -> the next 1st (1 Jul). If it's a generic recurrence with no named day ("weekly", "every month"), leave deadline null.
   - A link, video, idea, restaurant, or trip for later: give it neither deadline nor cadence. It parks. If they say "in N weeks/days", set snoozeDays.
 - Timed pings: if the message carries ANY time-of-day signal, set "dueTime" to a 24h "HH:MM" and set "deadline" to the date that time lands on. They get one ping at that instant on top of the daily digests. Resolve everything against NOW (Hong Kong time), and always to the soonest FUTURE instant:
   - Absolute clock time ("at 3pm" -> "15:00", "by 18:30" -> "18:30", "7 in the morning" -> "07:00").
@@ -103,7 +93,6 @@ What you know about ${name}:
   - "by <day>" with no clock time is a date, not a timed ping: set "deadline" only, leave "dueTime" null. A pure date ("Friday", "next week") is the same: deadline only.
   - No time signal at all: leave "dueTime" null.
 - "important" is your judgment of whether it matters to their goals, not its timing. Set it true for anything consequential. There is no urgency flag: urgency comes from the deadline alone.
-- Categories, pick exactly one: "personal" (errands, admin, appointments, family, health paperwork), "finance" (money, bills, taxes, investing), "fitness" (training, gym, sleep), "work" (their main job and work deliverables), "business" (their own side business), "learning" (upskilling, courses, AI, reading).
 - The death zone is important things with no date. An important item with no deadline falls into parking and rots, so if it's important, give it a deadline.
 
 Deciding the action:
@@ -126,7 +115,6 @@ function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFi
   const want = (k: string) => mask === null || mask.includes(k);
   if (want("title") && raw.title != null) fields.title = raw.title as string;
   if (want("type") && raw.type != null) fields.type = raw.type as ItemType;
-  if (want("category") && raw.category != null) fields.category = raw.category as Category;
   if (want("important") && raw.important != null) fields.important = raw.important as boolean;
   // deadline / dueTime / referee / cadence are nullable: when masked, an explicit null means "clear it".
   if (want("deadline")) fields.deadline = (raw.deadline as string | null) ?? null;
@@ -149,7 +137,6 @@ export async function interpret(
         .map(
           (i) =>
             `#${i.id} ${i.title} [${i.type}` +
-            (i.category ? `, ${i.category}` : "") +
             (i.referee ? `, ref:${i.referee}` : "") +
             (i.deadline ? `, due ${i.deadline}` : "") +
             `]`
@@ -198,10 +185,6 @@ export async function interpret(
                 },
                 title: { type: ["string", "null"] },
                 type: { type: ["string", "null"], enum: ["task", "commitment", "parking", null] },
-                category: {
-                  type: ["string", "null"],
-                  enum: ["personal", "finance", "fitness", "work", "business", "learning", null],
-                },
                 important: { type: ["boolean", "null"] },
                 deadline: { type: ["string", "null"], description: "ISO date YYYY-MM-DD, or null" },
                 dueTime: {

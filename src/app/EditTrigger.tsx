@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CATEGORIES, type Category } from "@/lib/rank";
 import { updateItem, remove, retire } from "./actions";
 
 // Narrowed, fully-serializable view of an item for the client. deadline is the
@@ -11,7 +10,6 @@ import { updateItem, remove, retire } from "./actions";
 export type EditableItem = {
   id: number;
   title: string;
-  category: string | null;
   deadline: string | null;
   // M8: HH:MM (HKT) of the precise reminder time, for the <input type="time">.
   dueTime: string | null;
@@ -66,17 +64,6 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
           </label>
 
           <div className="ef-grid">
-            <label className="ef-field">
-              <span>Category</span>
-              <select name="category" defaultValue={item.category ?? ""}>
-                <option value="">—</option>
-                {(Object.keys(CATEGORIES) as Category[]).map((c) => (
-                  <option key={c} value={c}>
-                    {CATEGORIES[c].label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="ef-field">
               <span>Referee</span>
               <select name="referee" defaultValue={item.referee ?? ""}>

@@ -4,23 +4,6 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export type Heat = "burning" | "soon" | "later";
 
-export type Category =
-  | "personal"
-  | "finance"
-  | "fitness"
-  | "work"
-  | "business"
-  | "learning";
-
-export const CATEGORIES: Record<Category, { label: string; dot: string }> = {
-  personal: { label: "Life", dot: "#7f77dd" },
-  finance: { label: "Money", dot: "#1d9e75" },
-  fitness: { label: "Body", dot: "#d85a30" },
-  work: { label: "Work", dot: "#378add" },
-  business: { label: "Build", dot: "#d4537e" },
-  learning: { label: "Brain", dot: "#888780" },
-};
-
 // Single user, based in Hong Kong. HK has no daylight saving, so a fixed
 // +8 offset is exact. All day-boundary math runs in HKT regardless of the
 // server timezone (Vercel runs UTC) so "due today" never drifts by a day.
@@ -205,8 +188,8 @@ export function deadlineLabel(deadline: Date | null, now: Date): string | null {
   return `due ${isoHKT(deadline)}`;
 }
 
-// Like deadlineLabel but always expressed in days, even past a week. The board's
-// category tiles want "due in 12 days", not an ISO date. Negative = overdue.
+// Like deadlineLabel but always expressed in days, even past a week. The board
+// rows want "due in 12 days", not an ISO date. Negative = overdue.
 export function dueInLabel(deadline: Date | null, now: Date): string | null {
   if (!deadline) return null;
   const cal = Math.round(

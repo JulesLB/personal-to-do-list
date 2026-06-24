@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CATEGORIES, type Category } from "@/lib/rank";
 import { createItem } from "./actions";
 
 // "+ New" lives in the topbar. Opens a modal that reuses the edit-form styling
-// and the same levers as the edit panel: title, category, referee, deadline, and
+// and the same levers as the edit panel: title, referee, deadline, and
 // repeats. Type and importance aren't here on purpose — type is derived from
 // deadline+repeats, importance defaults to true server-side.
 export function AddItem({ variant = "icon" }: { variant?: "icon" | "cta" }) {
@@ -44,17 +43,6 @@ function AddPanel({ onClose }: { onClose: () => void }) {
           </label>
 
           <div className="ef-grid">
-            <label className="ef-field">
-              <span>Category</span>
-              <select name="category" defaultValue="">
-                <option value="">—</option>
-                {(Object.keys(CATEGORIES) as Category[]).map((c) => (
-                  <option key={c} value={c}>
-                    {CATEGORIES[c].label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="ef-field">
               <span>Referee</span>
               <select name="referee" defaultValue="">

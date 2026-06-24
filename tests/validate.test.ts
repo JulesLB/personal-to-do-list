@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { clampTitle, normalizeCategory, MAX_TITLE } from "../src/lib/validate";
+import { clampTitle, MAX_TITLE } from "../src/lib/validate";
 
 describe("clampTitle", () => {
   it("trims surrounding whitespace", () => {
@@ -20,26 +20,5 @@ describe("clampTitle", () => {
 
   it("leaves a normal title untouched", () => {
     expect(clampTitle("file the Q3 taxes")).toBe("file the Q3 taxes");
-  });
-});
-
-describe("normalizeCategory", () => {
-  it("keeps each of the six known categories", () => {
-    for (const c of ["personal", "finance", "fitness", "work", "business", "learning"]) {
-      expect(normalizeCategory(c)).toBe(c);
-    }
-  });
-
-  it("drops an unknown category to null", () => {
-    expect(normalizeCategory("groceries")).toBeNull();
-    expect(normalizeCategory("WORK")).toBeNull(); // case-sensitive: keys are lowercase
-    expect(normalizeCategory("'; drop table")).toBeNull();
-  });
-
-  it("treats blank / null / undefined as null", () => {
-    expect(normalizeCategory("")).toBeNull();
-    expect(normalizeCategory("   ")).toBeNull();
-    expect(normalizeCategory(null)).toBeNull();
-    expect(normalizeCategory(undefined)).toBeNull();
   });
 });
