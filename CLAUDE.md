@@ -212,7 +212,9 @@ Auth: the `x-telegram-bot-api-secret-token` header vs `TELEGRAM_WEBHOOK_SECRET` 
 from Telegram; then `resolveUser(chatId)` maps the chat to its user and **all queries scope to that
 `userId`** (Phase 4 — the old `ensureOwner` single-owner lock is gone; signup is open). Always returns
 200 (even on internal error) so Telegram doesn't retry. New command: `/board` mints a one-time
-Telegram-link login.
+Telegram-link login — and `wantsBoardLink` ([src/lib/boardLink.ts](src/lib/boardLink.ts)) catches the
+natural-language asks for it too ("where's my board", "open board", "board link") before the AI router,
+kept tight so a real task like "prep the board meeting deck" still becomes an item.
 
 **Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
 pure (items → text + optional keyboard + topId) and imports no DB/Telegram, so it's unit-tested
