@@ -1,6 +1,6 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, timeHKT, CATEGORIES, type Category, type Ranked } from "@/lib/rank";
+import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, timeHKT, type Ranked } from "@/lib/rank";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
@@ -10,29 +10,14 @@ import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-const meta = (c: string | null) => (c && c in CATEGORIES ? CATEGORIES[c as Category] : null);
-
 const toEditable = (i: Item): EditableItem => ({
   id: i.id,
   title: i.title,
-  category: i.category,
   deadline: i.deadline ? isoHKT(i.deadline) : null,
   dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
   referee: i.referee,
   cadence: i.cadence,
 });
-
-// A small colored-dot pill: same look on the top filter row and on each task.
-function Cat({ c }: { c: string | null }) {
-  const m = meta(c);
-  if (!m) return null;
-  return (
-    <span className="cat" style={{ "--c": m.dot } as React.CSSProperties}>
-      <span className="dot" />
-      {m.label}
-    </span>
-  );
-}
 
 export default async function Board() {
   // Optional deep link to the bot, shown on the first-run screen so a new user
@@ -107,7 +92,6 @@ export default async function Board() {
             <Pushed i={i} />
           </div>
           <div className="row-meta">
-            <Cat c={i.category} />
             {due ? <span className={`dl dl-${dueTone(i, now)}`}>{due}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
           </div>
@@ -245,7 +229,6 @@ export default async function Board() {
             <EditTrigger item={toEditable(hero.item)} className="hero-body">
               <div className="hero-title">{hero.item.title}</div>
               <div className="hero-meta">
-                <Cat c={hero.item.category} />
                 {dueOf(hero.item) ? <span className={`dl dl-${dueTone(hero.item, now)}`}>{dueOf(hero.item)}</span> : null}
                 {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
                 <Pushed i={hero.item} />
@@ -333,7 +316,6 @@ export default async function Board() {
                   <EditTrigger item={toEditable(i)} className="row-main">
                     <div className="row-title">{i.title}</div>
                     <div className="row-meta">
-                      <Cat c={i.category} />
                       <span className="age">{parkingAgeLabel(i.createdAt, now)}</span>
                       {stale ? <span className="pushed">Decide: date it or drop it</span> : null}
                     </div>

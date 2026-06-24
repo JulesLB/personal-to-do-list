@@ -16,7 +16,7 @@ export function make(overrides: Partial<Item> = {}): Item {
     important: true,
     deadline: null,
     referee: null,
-    category: "personal",
+    category: null,
     cadence: null,
     status: "open",
     snoozeUntil: null,

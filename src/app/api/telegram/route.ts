@@ -11,7 +11,7 @@ import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
 import { resolveUser, refereeLabels, isOwnerUser } from "@/lib/user";
 import { botRateLimited, recordBotMessage } from "@/lib/ratelimit";
 import { overMonthlyBudget } from "@/lib/usage";
-import { clampTitle, normalizeCategory } from "@/lib/validate";
+import { clampTitle } from "@/lib/validate";
 import {
   extractName,
   isOnboarding,
@@ -402,7 +402,6 @@ export async function POST(req: NextRequest) {
       id: i.id,
       title: i.title,
       type: i.type,
-      category: i.category,
       referee: i.referee,
       deadline: i.deadline ? i.deadline.toISOString().slice(0, 10) : null,
     }));
@@ -474,7 +473,6 @@ export async function POST(req: NextRequest) {
       const cur = await prisma.item.findFirst({ where: { id: intent.itemId!, userId: user.id } });
       const data: Record<string, unknown> = {};
       if (f.title !== undefined) data.title = clampTitle(f.title);
-      if (f.category !== undefined) data.category = normalizeCategory(f.category);
       if (f.important !== undefined) data.important = f.important;
       // Deadline and cadence drive the derived type; recompute it from the values
       // that will be in place after this edit.
@@ -530,12 +528,11 @@ export async function POST(req: NextRequest) {
     const dueAt = f.dueTime ? toDueAt(f.deadline, f.dueTime) : null;
     const newDeadline = toDeadline(f.deadline) ?? (dueAt ? toDeadline(isoHKT(dueAt)) : null);
     const newCadence = f.cadence ?? null;
-    const item = await prisma.item.create({
+    await prisma.item.create({
       data: {
         userId: user.id,
         title: clampTitle(f.title ?? text) || text.slice(0, 80),
         type: deriveType(newDeadline, newCadence),
-        category: normalizeCategory(f.category),
         important: f.important ?? true,
         deadline: newDeadline,
         dueAt,
@@ -546,14 +543,7 @@ export async function POST(req: NextRequest) {
           : null,
       },
     });
-    await sendMessage(
-      chatId,
-      `${intent.reply}\n#${item.id} · ${item.type}` +
-        (item.category ? ` · ${item.category}` : "") +
-        (f.deadline ? ` · by ${f.deadline}` : "") +
-        (f.dueTime ? ` · ${f.dueTime}` : "") +
-        (item.referee ? ` · ${item.referee}` : "")
-    );
+    await sendMessage(chatId, intent.reply);
     // M5: the first captured item is the activation event. Send the one-time
     // orientation and close out onboarding. (Referee step parked; it will sit here.)
     if (isOnboarding(user)) {

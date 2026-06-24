@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { BUCKET_ORDER, type TriageBucket } from "@/lib/triage";
-import { CATEGORIES, type Category } from "@/lib/rank";
 import type { Receipts } from "@/lib/receipts";
 import type { CoachAnalysis } from "@/lib/coach";
 import { refreshAnalysis } from "../actions";
@@ -17,7 +16,6 @@ export type ReviewEntry = {
   bucket: TriageBucket;
   weight: number;
   title: string;
-  category: string | null;
   referee: string | null;
   due: string | null;
   detail: string | null;
@@ -41,17 +39,6 @@ function Box({ ico, num, label, cls }: { ico: string; num: number; label: string
       <span className="sb-num">{num}</span>
       <span className="sb-label">{label}</span>
     </div>
-  );
-}
-
-function Cat({ c }: { c: string | null }) {
-  const m = c && c in CATEGORIES ? CATEGORIES[c as Category] : null;
-  if (!m) return null;
-  return (
-    <span className="cat" style={{ "--c": m.dot } as React.CSSProperties}>
-      <span className="dot" />
-      {m.label}
-    </span>
   );
 }
 
@@ -189,7 +176,6 @@ export function ReviewClient({
                     <EditTrigger item={e.edit} className="trow-main">
                       <div className="trow-title">{e.title}</div>
                       <div className="trow-meta">
-                        <Cat c={e.category} />
                         {e.due ? <span className="dl dl-burning">{e.due}</span> : null}
                         {e.bucket === "death_zone" ? (
                           <span className="pushed">Decide: date it or drop it</span>

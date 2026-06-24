@@ -107,7 +107,6 @@ export function HeroFlow() {
           {phase >= 2 ? (
             <div className="lp-bubble lp-bubble-bot">
               Created &lsquo;Call the dentist&rsquo; due Fri 26 Jun, wife as referee 🦷
-              <span className="lp-bubble-meta">#41 · task · health · by 2026-06-26</span>
             </div>
           ) : null}
         </div>
@@ -121,8 +120,6 @@ export function HeroFlow() {
               <div className="lp-flow-main">
                 <div className="lp-flow-title">Call the dentist</div>
                 <div className="lp-mini-meta">
-                  <span className="lp-mini-dot" style={{ "--c": "#16b074" } as React.CSSProperties} />
-                  Health
                   <span className={`lp-flow-due${overdue ? " od" : ""}`}>{overdue ? "2d overdue" : "due Fri"}</span>
                 </div>
               </div>
@@ -132,8 +129,6 @@ export function HeroFlow() {
               <div className="lp-flow-main">
                 <div className="lp-flow-title">File Q2 taxes</div>
                 <div className="lp-mini-meta">
-                  <span className="lp-mini-dot" style={{ "--c": "#f5a623" } as React.CSSProperties} />
-                  Money
                   <span className="lp-flow-due">in 5 days</span>
                 </div>
               </div>
