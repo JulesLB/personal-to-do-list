@@ -229,7 +229,12 @@ export function Landing() {
             <img src="/logo.png" alt="" width={20} height={20} className="lp-brand-logo" />
             <span className="lp-brand-name lp-foot-name">Ember</span>
           </span>
-          <span className="lp-foot-meta">© 2026 Ember</span>
+          <span className="lp-foot-meta">
+            <a href="mailto:jules2lebreton@gmail.com" className="lp-foot-link">
+              Contact
+            </a>
+            {" · © 2026 Ember"}
+          </span>
         </footer>
       </div>
     </>

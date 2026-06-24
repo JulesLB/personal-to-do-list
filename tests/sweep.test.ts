@@ -88,7 +88,7 @@ describe("runSweep", () => {
     const res = await runSweep("evening", send);
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][1].toLowerCase()).toContain("well done");
+    expect(send.mock.calls[0][1].toLowerCase()).toContain("good job clearing everything");
     expect(res.sent).toBe(1);
     // It's a cheer, not an accountability nudge: no memory writes.
     expect(db.item.update).not.toHaveBeenCalled();

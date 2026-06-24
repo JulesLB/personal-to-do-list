@@ -7,15 +7,18 @@ import {
 } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-// PRD-11: the Telegram-link login. The bot mints a short-lived login token and
-// texts the user `/login/<token>`. Opening it verifies the token, then swaps it
-// for a long-lived session cookie bound to that user id and drops them on the
-// board. The link is one hop; the durable credential is the session cookie.
+// PRD-11: the Telegram-link login. The bot mints a login token and texts the user
+// `/login/<token>`. Opening it verifies the token, then swaps it for a long-lived
+// session cookie bound to that user id and drops them on the board. The link is
+// one hop; the durable credential is the session cookie.
 //
-// Single-use: the bot promises the link "works once". We enforce that by recording
-// the token's signature in the Setting table on first use and refusing any replay,
-// so a link that leaks (chat history, a logging proxy) can't be reused inside its
-// 10-minute window.
+// Single-use: we record the token's signature in the Setting table on first use
+// and refuse to re-issue a session for any replay. The link now rides every daily
+// nudge and lives a long time (90 days), so it sits in chat history — single-use
+// limits the blast radius of a forwarded or leaked link to a single login. A replay
+// of an already-consumed token (almost always the owner re-tapping an old nudge)
+// is sent to the board without a fresh cookie: their existing session loads it, and
+// a visitor with no session is bounced to get-started by the middleware.
 const failed = (req: NextRequest) =>
   NextResponse.redirect(new URL("/get-started?error=1", req.url), 303);
 
@@ -34,7 +37,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
 
   try {
     const seen = await prisma.setting.findUnique({ where: { key } });
-    if (seen) return failed(req); // already consumed: refuse the replay
+    // Already consumed: don't re-issue a session (that would defeat single-use for a
+    // leaked link). Send them to the board instead of the error funnel — the owner's
+    // existing session loads it; anyone without one is bounced by the middleware.
+    if (seen) return NextResponse.redirect(new URL("/", req.url), 303);
     await prisma.setting.create({ data: { key, value: exp } });
     // Opportunistic cleanup of markers whose tokens have expired (fixed-width unix
     // seconds, so a lexicographic compare matches a numeric one).
@@ -45,8 +51,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       .catch(() => {});
   } catch {
     // If the marker store is unavailable, fall through and still log the user in:
-    // the 10-minute expiry is the backstop, and locking out a valid login on a DB
-    // hiccup is worse than the small replay window.
+    // the token's own expiry is the backstop, and locking out a valid login on a DB
+    // hiccup is worse than the replay window.
   }
 
   const res = NextResponse.redirect(new URL("/", req.url), 303);

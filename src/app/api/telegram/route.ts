@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { sendMessage, answerCallback, editMessageText, type InlineKeyboard } from "@/lib/telegram";
 import { buildDailyNudge } from "@/lib/nudge";
 import { interpret, type OpenItemLite } from "@/lib/classify";
-import { createRefereeToken, createLoginLinkToken, passwordMatches } from "@/lib/auth";
+import { createRefereeToken, passwordMatches } from "@/lib/auth";
+import { boardLinkButton } from "@/lib/boardLink";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
@@ -36,16 +37,13 @@ const toDueAt = (day: string | null | undefined, time: string) =>
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
 
-// A one-tap "Open your board" button: a fresh, single-use login link bound to this
-// user. Attached to the welcome and /board so the dashboard is one tap from the
-// chat, no command to remember (the landing's get-started flow leans on this).
-// Returns undefined when APP_SECRET/APP_URL aren't set, so the message still sends.
+// A one-tap "See your board" button: a fresh login link bound to this user.
+// Attached to the welcome and /board so the dashboard is one tap from the chat,
+// no command to remember (the landing's get-started flow leans on this). Returns
+// undefined when APP_SECRET/APP_URL aren't set, so the message still sends.
 const boardLinkKeyboard = async (userId: number): Promise<InlineKeyboard | undefined> => {
-  const secret = process.env.APP_SECRET;
-  const base = process.env.APP_URL;
-  if (!secret || !base) return undefined;
-  const token = await createLoginLinkToken(userId, secret);
-  return { inline_keyboard: [[{ text: "Open your board →", url: `${base}/login/${token}` }]] };
+  const btn = await boardLinkButton(userId);
+  return btn ? { inline_keyboard: [[btn]] } : undefined;
 };
 
 // Completing a commitment honors the current cycle and resets its clock; it
@@ -248,15 +246,15 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
-    // Mint a one-time login link for the web board (PRD-11). The link carries a
-    // short-lived signed token bound to this user; opening it sets their session.
+    // Mint a login link for the web board (PRD-11). The link carries a signed
+    // token bound to this user; opening it sets their session.
     if (lower === "/board" || lower === "board" || lower === "/login" || lower === "login") {
       const kb = await boardLinkKeyboard(user.id);
       if (!kb) {
         await sendMessage(chatId, "Can't mint a board link: APP_SECRET or APP_URL isn't set.");
         return ok();
       }
-      await sendMessage(chatId, "Here's your board. The button works once and expires in 10 minutes.", kb);
+      await sendMessage(chatId, "Here's your board. Tap to open it.", kb);
       return ok();
     }
 
@@ -367,6 +365,22 @@ export async function POST(req: NextRequest) {
         .catch(() => {});
       if (pushedLater) await logEvent(id, "snoozed");
       await sendMessage(chatId, `Deadline set on #${id}: ${due[2]}${time ? ` ${time}` : ""}.`);
+      return ok();
+    }
+
+    // Launch-prereq feedback channel. Anything after `/feedback` is captured raw
+    // (case preserved) for the weekly digest; an empty one just shows the usage.
+    if (/^\/?feedback\b/i.test(text)) {
+      const body = text.replace(/^\/?feedback\b[:\s]*/i, "").trim().slice(0, 2000);
+      if (!body) {
+        await sendMessage(
+          chatId,
+          "Tell me what's working or broken, e.g. `/feedback the burn animation lags on my phone`."
+        );
+        return ok();
+      }
+      await prisma.feedback.create({ data: { userId: user.id, message: body } }).catch(() => {});
+      await sendMessage(chatId, "Got it, thank you. That goes straight to Jules. 🙏");
       return ok();
     }
 

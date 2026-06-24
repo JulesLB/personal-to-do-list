@@ -63,9 +63,14 @@ export async function verifySessionToken(
   return verifyIdToken(token, secret, "session");
 }
 
-// Login-link token (PRD-11): short-lived (10 min) token the bot mints and texts
-// to the user; opening /login/<token> exchanges it for a session cookie.
-const LOGIN_LINK_TTL_SEC = 60 * 10;
+// Login-link token (PRD-11): a long-lived (90-day) token the bot mints and texts
+// to the user; opening /login/<token> exchanges it for a session cookie. It's
+// long-lived on purpose — the link rides every daily nudge, so a user must be able
+// to tap a morning ping hours later (or a new user any time) and land on their
+// board. The chat is already the identity anchor (anyone in the chat can mint a
+// fresh link), so a durable link there widens nothing; APP_SECRET rotation still
+// revokes every outstanding one.
+const LOGIN_LINK_TTL_SEC = 60 * 60 * 24 * 90;
 
 export async function createLoginLinkToken(userId: number, secret: string): Promise<string> {
   const exp = String(Math.floor(Date.now() / 1000) + LOGIN_LINK_TTL_SEC);

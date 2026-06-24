@@ -1,7 +1,7 @@
 {
   "regions": ["icn1"],
   "crons": [
-    { "path": "/api/cron", "schedule": "0 1 * * *" },
-    { "path": "/api/cron?slot=evening", "schedule": "0 13 * * *" }
+    { "path": "/api/cron", "schedule": "0 0 * * *" },
+    { "path": "/api/cron?slot=evening", "schedule": "0 12 * * *" }
   ]
 }

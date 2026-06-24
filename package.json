@@ -24,6 +24,7 @@
     "@anthropic-ai/sdk": "^0.104.2",
     "@prisma/client": "^6.19.3",
     "next": "^15.5.19",
+    "posthog-js": "^1.393.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
