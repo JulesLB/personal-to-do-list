@@ -4,7 +4,7 @@ import { sendMessage, answerCallback, editMessageText, type InlineKeyboard } fro
 import { buildDailyNudge } from "@/lib/nudge";
 import { interpret, type OpenItemLite } from "@/lib/classify";
 import { createRefereeToken, passwordMatches } from "@/lib/auth";
-import { boardLinkButton } from "@/lib/boardLink";
+import { boardLinkButton, wantsBoardLink } from "@/lib/boardLink";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
 import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
@@ -247,8 +247,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Mint a login link for the web board (PRD-11). The link carries a signed
-    // token bound to this user; opening it sets their session.
-    if (lower === "/board" || lower === "board" || lower === "/login" || lower === "login") {
+    // token bound to this user; opening it sets their session. Triggered by the
+    // exact command, the login aliases, or a natural-language ask ("where's my
+    // board", "open board") so the link isn't tied to remembering /board.
+    if (
+      lower === "/board" ||
+      lower === "board" ||
+      lower === "/login" ||
+      lower === "login" ||
+      wantsBoardLink(text)
+    ) {
       const kb = await boardLinkKeyboard(user.id);
       if (!kb) {
         await sendMessage(chatId, "Can't mint a board link: APP_SECRET or APP_URL isn't set.");
