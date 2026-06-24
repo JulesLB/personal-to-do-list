@@ -82,7 +82,7 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 3. Create a free [Supabase](https://supabase.com) project. Under Connect → ORMs → Prisma, copy the two pooler URLs.
 4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, `ADMIN_SECRET`, and `CRON_SECRET`.
 5. `npm run db:migrate:deploy` to apply the committed migrations, then `npm run db:seed` for sample items.
-6. `npm run dev`, open http://localhost:3000. Logged out, the board redirects to `/get-started`. Sign in via the bot's `/board` link once it's running. The public landing is at `/landing`.
+6. `npm run dev`, open http://localhost:3000. Logged out, the board redirects to the `/get-started` re-entry page. Sign in via the bot's `/board` link once it's running. The public landing is at `/landing`.
 7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL` and `TELEGRAM_BOT_URL`. Vercel's build runs `prisma migrate deploy && prisma generate && next build`, so pending migrations apply to prod on every deploy. Crons are declared in `vercel.json`. Pin the function region to match the Supabase region.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
 9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.

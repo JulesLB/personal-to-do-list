@@ -117,12 +117,18 @@ chat that messages the bot becomes a user, abuse-hardened on the telegram path b
 `userId`; id-based mutations use `updateMany`/`deleteMany` filtered by `{ id, userId }` so a guessed id
 can't touch another user's item. The sweep loops all users and sends each their own nudge. The board
 reads the logged-in user via `currentUser()` ([src/lib/session.ts](src/lib/session.ts)); board auth is
-a **Telegram-link login** — the bot's `/board` command (and the `/start` welcome) now reply with a
-one-tap **"Open your board"** inline button that carries a one-time `login` token, and
+a **Telegram-link login** — the bot's `/board` command (and the `/start` welcome) reply with a
+one-tap **"See your board"** inline button carrying a **`login` token (90-day TTL)**, and
 `/login/<token>` swaps it for a session cookie whose token now carries the `userId`
-([src/lib/auth.ts](src/lib/auth.ts), domain-separated from the `login`/`referee` tokens). **There is no
-separate `/login` page anymore** — a logged-out board hit redirects to the public `/get-started` funnel
-(see Public funnel below), which also hosts the `APP_SECRET` owner fast path behind a disclosure. Verify isolation
+([src/lib/auth.ts](src/lib/auth.ts), domain-separated from the `login`/`referee` tokens). The login
+link is **long-lived on purpose** — it now rides every daily nudge, so a morning ping must stay
+tappable hours later (and a fresh user any time); the chat is already the identity anchor, so a durable
+link there widens nothing, and `APP_SECRET` rotation still revokes the lot. It's still **single-use**
+(a `loginused:<sig>` marker in `Setting`, opportunistically GC'd); a replay of an already-consumed
+token redirects to the board (no fresh cookie) instead of the error funnel, so re-tapping an old nudge
+link Just Works for the owner. **There is no separate `/login` page anymore** — a logged-out board hit
+redirects to the public `/get-started?return=1` re-entry view (see Public funnel below), which also
+hosts the `APP_SECRET` owner fast path behind a disclosure. Verify isolation
 anytime with `npm run check:isolation` (real-DB integration check). **Gotcha that bit us:**
 `npm run db:migrate` targets the cloud `DATABASE_URL` in `.env`, so it applies migrations to **prod** —
 deploy the matching code in the same beat or the live bot breaks on the schema it can't satisfy.
@@ -211,21 +217,32 @@ Telegram-link login.
 **Nudge engine** — `buildDailyNudge(items, now, slot)` in [src/lib/nudge.ts](src/lib/nudge.ts) is
 pure (items → text + optional keyboard + topId) and imports no DB/Telegram, so it's unit-tested
 directly. It renders a **digest of only what's overdue and what's due today** (the two buckets fall
-out of `daysOverdue`'s sign) — two sections, **3 items each**, with each section's overflow rolled
-into a `+N more` line. Nothing future, back burner, or parking ever shows. `runSweep(slot)` in
+out of `daysOverdue`'s sign) — a one-line intro (`What's up today?` morning / `What's still pending?`
+evening), then two sections, **3 items each**, with each section's overflow rolled into a `+N more`
+line. Nothing future, back burner, or parking ever shows. **Per-item rendering is minimal:** category
+is never shown, the **Overdue** section keeps each item's `Nd overdue` label, but the **Due today**
+section drops the date (every item there is due today, so repeating it is noise) — a plain task there
+collapses to its bare title; commitments still show their cadence. `runSweep(slot)` in
 [src/lib/sweep.ts](src/lib/sweep.ts) is the side-effecting wrapper the cron calls: it reads the DB,
 sends the message, and writes accountability memory (bumps `nudgeCount`, bumps `ignoreCount` when it
 re-nudges a still-open top item, appends a `nudged` Event). **Both slots stay silent when nothing is
 overdue or due today** — no empty-state ping (a notification on a quiet day just teaches you to swipe
 the bot away unread). The two slots differ:
 
-- **Morning** is a plain preview — bullet list, **no buttons**. You read the day, you don't tick it.
+- **Morning** is a plain preview — bullet list, **no tick buttons**. You read the day, you don't tick it.
 - **Evening** is the wrap-up: the items are **numbered** and carry a compact **tick grid** (`✓ 1`
   `✓ 2` …, three per row, the number tying each button to its line — Telegram can't put a button
   inside a text row). Tapping a tick runs `completeItem` and the webhook **re-renders the message in
   place** so the burned item drops and a hidden overflow item surfaces. Clear the lot and the message
-  becomes a **"Well done"** cheer — the one exception to evening silence: `clearedSomethingToday` (a
-  `done` Event today, in `sweep.ts`) means you cleared the day rather than never having anything due.
+  becomes a **"Good job clearing everything today."** cheer — the one exception to evening silence:
+  `clearedSomethingToday` (a `done` Event today, in `sweep.ts`) means you cleared the day rather than
+  never having anything due.
+
+**Every nudge carries a board link.** `sweepUser` appends a **"See your board"** URL button (its own
+keyboard row, under the evening tick grid or alone in the morning) to both slots and the cheer, via
+`boardLinkButton` ([src/lib/boardLink.ts](src/lib/boardLink.ts)) — the pure `buildDailyNudge` can't
+mint a per-user token, so the link is added in the side-effecting wrapper. Same helper backs the bot's
+`/board` command, so the dashboard is always one tap from a message.
 
 **Referee escalation is paused.** The warning copy and the "Tell <referee>" button are gated behind
 `ESCALATION_ENABLED` in [sweep.ts](src/lib/sweep.ts) (currently `false`) until WhatsApp auto-send is
@@ -284,7 +301,9 @@ time input** (the Add modal and edit panel, via `createItem`/`updateItem`).
 `Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
 the response is just safe counters (`{ sent, users }` — how many users got a nudge, out of how many),
 no chat ids. Reads `?slot=evening` / `?slot=timed` (defaults to morning). Two jobs in
-[vercel.json](vercel.json): `0 1 * * *` (09:00 HKT, morning) and `0 13 * * *` (21:00 HKT, evening).
+[vercel.json](vercel.json): `0 0 * * *` (08:00 HKT, morning) and `0 12 * * *` (20:00 HKT, evening).
+(Vercel Hobby crons are best-effort and can fire 10–40 min late; move to an external scheduler if
+punctuality starts to matter.)
 Two once-daily jobs fit the Vercel Hobby limit, so the **timed slot is driven by an external
 scheduler** instead — a GitHub Action ([.github/workflows/timed-nudges.yml](.github/workflows/timed-nudges.yml))
 hits `/api/cron?slot=timed` every 5 min (GitHub's minimum; free + unlimited since the repo is public).
@@ -346,7 +365,8 @@ board scopes to that user via `currentUser()`. Sessions come from either the Tel
 rotating `APP_SECRET` invalidates every outstanding session. The matcher leaves `/login` (now only the
 `/login/<token>` route handler, the page is gone), `/api`, `/referee`, `/landing`, `/get-started`, `_next`,
 and any path with a file extension open (the last so static assets like `/logo.png` aren't redirected). A
-logged-out board hit **redirects to `/get-started`**, not a login page.
+logged-out board hit **redirects to `/get-started?return=1`** (the returning-user re-entry view, not the
+first-timer funnel — see Public funnel below), not a login page.
 Styling is a light, card-based theme in [src/app/globals.css](src/app/globals.css). A calm skeleton
 ([src/app/loading.tsx](src/app/loading.tsx)) covers a navigation (e.g. opening Review) during the
 dynamic re-render, which shows mainly on a cold serverless start.
@@ -361,11 +381,15 @@ bot → real echo line → ranked board → overdue/red → referee escalation (
 (reusing the board's `.igniting` + `#ember-fire` filter) — then a how-it-works box with three light,
 scroll-revealed (`Reveal`, IntersectionObserver) step cards, a "why vs a notes app" trio with hover
 highlight, and CTAs to `/get-started`. **Telegram is the identity, so there is no web signup and no
-per-user password**: get-started is a 3-step handoff (get Telegram, even via Telegram Web with no install
-/ open the bot + send the first task / send `/board` and tap the link it replies with). The owner
-`APP_SECRET` shortcut sits behind a disclosure there; failed `/api/login` and bad `/login/<token>` both
-redirect to `/get-started?error=1`. The CTA deep-link reads `TELEGRAM_BOT_URL` (falls back to
-telegram.org if unset — set it in Vercel). All landing styles are `.lp-*` / `.gs-*` in globals.css,
+per-user password**: get-started serves **two audiences off one route, split by query**. New users
+(landing CTA, no query) get the **3-step handoff** (get Telegram, even via Telegram Web with no install
+/ open the bot + send the first task / send `/board` and tap the link it replies with). Returning users
+(`?return=1`, set by the landing **"Log in"** link via `/` and by the logged-out board redirect) get a
+short **"Welcome back"** re-entry: one **"Open Ember on Telegram"** button + "send `/board`", plus a
+link back to the full funnel. A **stale/failed** board link (`?error=1`, from `/api/login` and a bad
+`/login/<token>`) shares that returning view with a calm note above it (`.gs-error`), so a failed login
+no longer dumps onto the beginner wall. The owner `APP_SECRET` shortcut sits behind a disclosure there.
+The CTA deep-link reads `TELEGRAM_BOT_URL` (falls back to telegram.org if unset — set it in Vercel). All landing styles are `.lp-*` / `.gs-*` in globals.css,
 reduced-motion safe; HeroFlow + Reveal are the only client islands.
 
 **Burn-to-ash completion** ([src/app/BurnButton.tsx](src/app/BurnButton.tsx)) — the reward half of
