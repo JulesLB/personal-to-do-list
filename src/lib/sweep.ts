@@ -5,7 +5,20 @@ import { isTimedNudgeDue, buildTimedNudge } from "./timed";
 import { isCritical, startOfDayHKT } from "./rank";
 import { escalationStep, type EscalationStep } from "./escalate";
 import { getReferee, isOptedInReferee, canAutoSend, sendToReferee } from "./referee";
+import { boardLinkButton } from "./boardLink";
 import type { Item, Referee, User } from "@prisma/client";
+
+// Append the per-user "See your board" button as its own row beneath whatever
+// keyboard the nudge already carries (the evening tick grid, or nothing in the
+// morning). Degrades to the original keyboard when no link can be minted.
+async function withBoardLink(
+  userId: number,
+  keyboard?: InlineKeyboard
+): Promise<InlineKeyboard | undefined> {
+  const btn = await boardLinkButton(userId);
+  if (!btn) return keyboard;
+  return { inline_keyboard: [...(keyboard?.inline_keyboard ?? []), [btn]] };
+}
 
 export type { Slot };
 
@@ -78,7 +91,11 @@ async function sweepUser(
   // and you cleared them all (positive reinforcement, not an empty-state ping).
   if (!nudge) {
     if (slot === "evening" && (await clearedSomethingToday(user.id, now))) {
-      await send(user.telegramChatId, "Well done. You cleared everything due today. 🔥");
+      await send(
+        user.telegramChatId,
+        "Good job clearing everything today. 🔥",
+        await withBoardLink(user.id)
+      );
       return true;
     }
     return false;
@@ -95,7 +112,7 @@ async function sweepUser(
   const willSend = ESCALATION_ENABLED && step === "send" && canAutoSend(ref);
   const ownerName = user.name || "Your friend";
 
-  await send(user.telegramChatId, nudge.text, nudge.keyboard);
+  await send(user.telegramChatId, nudge.text, await withBoardLink(user.id, nudge.keyboard));
 
   // Accountability memory: a re-nudge of a still-open item means the last nudge
   // was ignored (done and snooze remove an item; a kept promise gets marked done).

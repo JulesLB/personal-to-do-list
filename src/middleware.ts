@@ -25,9 +25,10 @@ export async function middleware(req: NextRequest) {
   const secret = process.env.APP_SECRET;
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!secret || (await verifySessionToken(token, secret)) === null) {
-    // No separate login page: a logged-out board visit lands on the get-started
-    // funnel, which explains how to get in (message the bot, tap its board link).
-    return NextResponse.redirect(new URL("/get-started", req.url));
+    // No separate login page. Anyone hitting the board is a returning user by
+    // definition (new users arrive via the landing CTA), so send them to the
+    // get-started page's short re-entry view (?return=1), not the first-timer funnel.
+    return NextResponse.redirect(new URL("/get-started?return=1", req.url));
   }
   return NextResponse.next();
 }

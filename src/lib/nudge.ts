@@ -5,8 +5,6 @@ import {
   cadenceLabel,
   commitmentDueLabel,
   daysOverdue,
-  CATEGORIES,
-  type Category,
 } from "./rank";
 import type { Item } from "@prisma/client";
 
@@ -22,40 +20,34 @@ const SECTION_CAP = 3;
 export type Slot = "morning" | "evening";
 export type DailyNudge = { text: string; keyboard?: InlineKeyboard; topId: number };
 
-const catLabel = (c: string | null) =>
-  c && c in CATEGORIES ? CATEGORIES[c as Category].label : null;
-
-// One-line meta under a title: category, when, cadence.
-function metaLine(it: Item, now: Date): string {
+// One-line meta under a title: when (overdue only), cadence. Category is omitted
+// (the dot it stood for carried no decision). The due date is shown only when it
+// adds something: in the Overdue section the "Nd overdue" reads, but under "Due
+// today" every item is due today, so repeating it is just noise — there showDate
+// is false and a plain task collapses to its bare title.
+function metaLine(it: Item, now: Date, showDate: boolean): string {
   return [
-    catLabel(it.category),
-    it.type === "commitment" ? commitmentDueLabel(it, now) : deadlineLabel(it.deadline, now),
+    showDate
+      ? it.type === "commitment"
+        ? commitmentDueLabel(it, now)
+        : deadlineLabel(it.deadline, now)
+      : null,
     it.type === "commitment" ? cadenceLabel(it.cadence) : null,
   ]
     .filter(Boolean)
     .join(` ${DOT} `);
 }
 
-function lineItem(it: Item, now: Date, marker: string): string {
-  const meta = metaLine(it, now);
+function lineItem(it: Item, now: Date, marker: string, showDate: boolean): string {
+  const meta = metaLine(it, now, showDate);
   return `${marker} ${it.title}${meta ? ` ${DOT} ${meta}` : ""}`;
 }
 
-// "3 overdue, 2 due today" / "2 overdue" / "2 due today".
-function summary(overdue: number, today: number): string {
-  const parts: string[] = [];
-  if (overdue) parts.push(`${overdue} overdue`);
-  if (today) parts.push(`${today} due today`);
-  return parts.join(", ");
-}
-
 // Morning is a plain preview of the day (no buttons — you don't tick in the
-// morning, you plan). Evening is the wrap-up: numbered list + a tick grid.
-function header(slot: Slot, overdue: number, today: number): string {
-  const sum = summary(overdue, today);
-  return slot === "evening"
-    ? `That was today. Still pending: ${sum}.`
-    : `Morning. ${sum}.`;
+// morning, you plan). Evening is the wrap-up: numbered list + a tick grid. The
+// section headers already carry the counts, so the intro stays a bare question.
+function header(slot: Slot): string {
+  return slot === "evening" ? "What's still pending?" : "What's up today?";
 }
 
 export function buildDailyNudge(
@@ -76,18 +68,26 @@ export function buildDailyNudge(
   // Evening numbers each line (1..N) so a compact "✓ N" button maps to its row;
   // morning just bullets them.
   let counter = 0;
-  const section = (icon: string, label: string, list: Item[], total: number): string => {
-    const lines = list.map((it) => lineItem(it, now, evening ? `${++counter}.` : BULLET));
+  const section = (
+    icon: string,
+    label: string,
+    list: Item[],
+    total: number,
+    showDate: boolean
+  ): string => {
+    const lines = list.map((it) =>
+      lineItem(it, now, evening ? `${++counter}.` : BULLET, showDate)
+    );
     let s = `${icon} ${label} (${total})\n${lines.join("\n")}`;
     const extra = total - list.length;
     if (extra > 0) s += `\n+${extra} more`;
     return s;
   };
 
-  let text = header(slot, overdue.length, today.length);
+  let text = header(slot);
   const blocks: string[] = [];
-  if (shownOverdue.length) blocks.push(section("🔴", "Overdue", shownOverdue, overdue.length));
-  if (shownToday.length) blocks.push(section("📅", "Due today", shownToday, today.length));
+  if (shownOverdue.length) blocks.push(section("🔴", "Overdue", shownOverdue, overdue.length, true));
+  if (shownToday.length) blocks.push(section("📅", "Due today", shownToday, today.length, false));
   text += `\n\n${blocks.join("\n\n")}`;
 
   const topId = shown[0].id;

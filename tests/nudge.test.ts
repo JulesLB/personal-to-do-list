@@ -23,11 +23,36 @@ describe("buildDailyNudge", () => {
       NOW,
       "morning"
     );
+    expect(n?.text).toContain("What's up today?");
     expect(n?.text).toContain("Overdue (1)");
     expect(n?.text).toContain("Book dentist");
     expect(n?.text).toContain("Due today (1)");
     expect(n?.keyboard).toBeUndefined();
     expect(n?.topId).toBe(5);
+  });
+
+  it("keeps the overdue count on overdue items but drops it under due today", () => {
+    const n = buildDailyNudge(
+      [
+        make({ id: 5, title: "Book dentist", deadline: daysAhead(-2), category: "personal" }),
+        make({ id: 6, title: "Pay rent", deadline: daysAhead(0), category: "finance" }),
+      ],
+      NOW,
+      "evening"
+    );
+    // Overdue keeps "Nd overdue"; due today shows the bare title (no "due today").
+    expect(n?.text).toContain("Book dentist · 2d overdue");
+    expect(n?.text).toContain("2. Pay rent");
+    expect(n?.text).not.toContain("Pay rent ·");
+    expect(n?.text).not.toContain("due today");
+    // Category never renders.
+    expect(n?.text?.toLowerCase()).not.toContain("personal");
+    expect(n?.text?.toLowerCase()).not.toContain("finance");
+  });
+
+  it("uses the evening intro", () => {
+    const n = buildDailyNudge([make({ id: 6, deadline: daysAhead(0) })], NOW, "evening");
+    expect(n?.text).toContain("What's still pending?");
   });
 
   it("evening numbers the items and gives each a tick button", () => {
