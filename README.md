@@ -6,7 +6,7 @@
 
 ### See it live
 
-- **[Watch the 60-second demo](https://personal-to-do-list-green.vercel.app/landing)** — the whole loop runs in one phone: text the bot, watch it rank, see it go red, see the escalation, watch a finished task burn to ash.
+- **[Watch the 60-second demo](https://ember-personal-todo.vercel.app/landing)** — the whole loop runs in one phone: text the bot, watch it rank, see it go red, see the escalation, watch a finished task burn to ash.
 - **[Try the bot yourself](https://t.me/PRactical_to_do_bot)** — open it in Telegram, send one thing you keep avoiding, and it replies with a link to your own board. No signup, no password.
 
 I built Ember solo on nights and weekends with Claude Code, both as a tool I actually use and as a way to learn proper app-building: auth, testing, migrations, deploy, cost tracking. The README below is the long version.
@@ -51,7 +51,7 @@ The build doubles as a learning exercise, so the boring parts are first-class.
 
 ## Stack
 
-Next.js 15 (App Router) on Vercel · Prisma 6 + Supabase Postgres · Claude (Anthropic SDK, Haiku) · OpenAI Whisper (voice notes) · Telegram Bot API · Vercel Cron · TypeScript · Vitest.
+Next.js 15 (App Router) on Vercel · Prisma 6 + Supabase Postgres · Claude (Anthropic SDK, Haiku) · OpenAI Whisper (voice notes) · Telegram Bot API · external cron (cron-job.org) · TypeScript · Vitest.
 
 ## Talking to the bot
 
@@ -83,7 +83,7 @@ Prereqs: Node 20+, an Anthropic API key, a Telegram bot, and a Postgres database
 4. `cp .env.example .env` and fill it in. Use the transaction pooler (port 6543) for `DATABASE_URL` and the session pooler (port 5432) for `DIRECT_URL`. Pick long random strings for `TELEGRAM_WEBHOOK_SECRET`, `APP_SECRET`, `ADMIN_SECRET`, and `CRON_SECRET`.
 5. `npm run db:migrate:deploy` to apply the committed migrations, then `npm run db:seed` for sample items.
 6. `npm run dev`, open http://localhost:3000. Logged out, the board redirects to the `/get-started` re-entry page. Sign in via the bot's `/board` link once it's running. The public landing is at `/landing`.
-7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL` and `TELEGRAM_BOT_URL`. Vercel's build runs `prisma migrate deploy && prisma generate && next build`, so pending migrations apply to prod on every deploy. Crons are declared in `vercel.json`. Pin the function region to match the Supabase region.
+7. Deploy: push to GitHub, import the repo in Vercel, add the same env vars plus `APP_URL` and `TELEGRAM_BOT_URL`. Vercel's build runs `prisma migrate deploy && prisma generate && next build`, so pending migrations apply to prod on every deploy. `vercel.json` only pins the function region (match the Supabase region) — the three nudge slots are driven by external schedulers, not Vercel cron, because Hobby crons fired late or skipped. Point [cron-job.org](https://cron-job.org) (or any scheduler) at `GET APP_URL/api/cron` (morning, `0 0 * * *` UTC), `?slot=evening` (`0 12 * * *`), and `?slot=timed` (every 5 min), each sending `Authorization: Bearer CRON_SECRET`.
 8. Connect Telegram: with `APP_URL` set, run `npm run set-webhook`.
 9. In Telegram, send `/start`, then try: `book the dentist by friday or my wife hears about it`.
 
@@ -99,6 +99,20 @@ The Telegram webhook needs a public URL, so the bot goes live once deployed (or 
 ## Tests
 
 `npm test` runs the Vitest suite over the pure logic (ranking, nudge, triage, weekly receipts, escalation) against a fixed clock, no DB required. `npm run build` is the type-check gate. Run both before committing.
+
+## Picking up the next build
+
+Future-me, start here.
+
+**Where the build state lives.** [`docs/ROADMAP.md`](docs/ROADMAP.md) is the source of truth. Read its Status board, find the lowest-numbered milestone that isn't `DONE`, build to its Definition of done, flip it to `DONE`, commit. As of this writing the open fronts are **M2** (referee loop, built but waiting on Meta WhatsApp setup), **M3** (Review page shipped, Sunday digest still pending), and **M7** (Pacts, planned but not started, PRD in [`docs/M7-pacts.md`](docs/M7-pacts.md)).
+
+**The workflow, every time.** Branch first (`git switch -c feat/<name>`), never build on `main`. Use `npm run dev:local` for UI work (isolated SQLite, never touches prod) and `npm run try -- "<msg>"` to dry-run the bot brain. Run `npm test` and `npm run build` before merging.
+
+**The one gotcha that bit me.** `npm run db:migrate` targets the cloud `DATABASE_URL`, so it applies migrations to **prod**. Deploy the matching code in the same beat or the live bot breaks on a schema it can't satisfy. After any data-access change, run `npm run check:isolation`.
+
+**Crons are external now.** Vercel Hobby crons fired late or skipped, so all three slots run off [cron-job.org](https://cron-job.org) hitting `/api/cron` (see deploy step 7). `vercel.json` holds only the region pin. If a nudge goes missing, check the scheduler, not the app.
+
+**Hosting.** Production runs at `ember-personal-todo.vercel.app` (the old `personal-to-do-list-green` URL 307-redirects to it). A real custom domain is optional, only worth it if Ember ever goes front-and-center on LinkedIn.
 
 ---
 
