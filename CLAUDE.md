@@ -358,7 +358,10 @@ tick; quick-snooze was removed from the board, so deferring happens through Tele
 `snooze <id> <days>` command) or by editing the date. There is no promote button and no parking type option:
 giving an item a **deadline** in the panel
 derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
-it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at
+it a commitment — all via `deriveType` in `updateItem`. Both the Add modal and the edit panel render
+through one shared **`Modal`** shell ([src/app/Modal.tsx](src/app/Modal.tsx)) that carries the
+accessibility a bare backdrop div can't: `role="dialog"` + `aria-modal`, Escape to close, focus trapped
+inside while open, and focus restored to the trigger on close. Branded **Ember** — favicon at
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
 [src/middleware.ts](src/middleware.ts): the `app_auth` cookie is **not** the password — it holds a
 signed, 30-day-expiring HMAC token ([src/lib/auth.ts](src/lib/auth.ts), Web Crypto so it runs on the
