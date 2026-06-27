@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { updateItem, remove, retire } from "./actions";
+import { Modal } from "./Modal";
 
 // Narrowed, fully-serializable view of an item for the client. deadline is the
 // HKT YYYY-MM-DD the date input expects, computed on the server with isoHKT.
@@ -54,9 +55,7 @@ export function EditTrigger({
 
 function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">Edit item</div>
+    <Modal title="Edit item" onClose={onClose}>
         <form className="edit-form" action={updateItem.bind(null, item.id)} onSubmit={onClose}>
           <label className="ef-field ef-wide">
             <span>Title</span>
@@ -109,8 +108,7 @@ function EditPanel({ item, onClose }: { item: EditableItem; onClose: () => void 
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

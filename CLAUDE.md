@@ -302,16 +302,17 @@ time input** (the Add modal and edit panel, via `createItem`/`updateItem`).
 **Cron** ([src/app/api/cron/route.ts](src/app/api/cron/route.ts)) — GET guarded by
 `Bearer ${CRON_SECRET}`, **fail-closed** (a missing `CRON_SECRET` returns 401, never runs open), and
 the response is just safe counters (`{ sent, users }` — how many users got a nudge, out of how many),
-no chat ids. Reads `?slot=evening` / `?slot=timed` (defaults to morning). Two jobs in
-[vercel.json](vercel.json): `0 0 * * *` (08:00 HKT, morning) and `0 12 * * *` (20:00 HKT, evening).
-(Vercel Hobby crons are best-effort and can fire 10–40 min late; move to an external scheduler if
-punctuality starts to matter.)
-Two once-daily jobs fit the Vercel Hobby limit, so the **timed slot is driven by an external
-scheduler** instead — a GitHub Action ([.github/workflows/timed-nudges.yml](.github/workflows/timed-nudges.yml))
-hits `/api/cron?slot=timed` every 5 min (GitHub's minimum; free + unlimited since the repo is public).
-Needs repo secrets `APP_URL` + `CRON_SECRET`; until they're set the scheduler no-ops and the digests are
-unaffected. GitHub's cron is best-effort (can lag, auto-disables after 60 days idle) — swap to
-QStash/cron-job.org if timing reliability matters. `vercel.json`
+no chat ids. Reads `?slot=evening` / `?slot=timed` (defaults to morning). **All three slots are now
+driven by external schedulers, not Vercel cron** — Vercel Hobby crons proved too unreliable (best-effort,
+fire 10–40 min late or skip entirely, which is why the 8am digest kept going missing). The two daily
+digests run as **cron-job.org** jobs hitting `/api/cron` at `0 0 * * *` (08:00 HKT, morning) and
+`/api/cron?slot=evening` at `0 12 * * *` (20:00 HKT, evening); the **timed slot** runs every 5 min,
+also off-Vercel. (`vercel.json` no longer declares any `crons` block — kept empty of crons on purpose so
+nothing double-fires against cron-job.org.) The timed checker has a GitHub Action fallback
+([.github/workflows/timed-nudges.yml](.github/workflows/timed-nudges.yml)) hitting `/api/cron?slot=timed`
+every 5 min, but GitHub's scheduled cron never fired reliably here either, so cron-job.org is the live
+trigger for all three. Each external job needs the `APP_URL` + `CRON_SECRET` pair so the endpoint accepts
+the call. `vercel.json`
 also pins **`regions: ["icn1"]`**
 (Seoul) so every serverless function runs in the same region as the Supabase DB (`ap-northeast-2`);
 without it Vercel defaults to US-East and each DB round trip crosses the Pacific (the board fires
@@ -357,7 +358,10 @@ tick; quick-snooze was removed from the board, so deferring happens through Tele
 `snooze <id> <days>` command) or by editing the date. There is no promote button and no parking type option:
 giving an item a **deadline** in the panel
 derives it into a task, clearing the deadline drops it back to parking, and setting "Repeats" makes
-it a commitment — all via `deriveType` in `updateItem`. Branded **Ember** — favicon at
+it a commitment — all via `deriveType` in `updateItem`. Both the Add modal and the edit panel render
+through one shared **`Modal`** shell ([src/app/Modal.tsx](src/app/Modal.tsx)) that carries the
+accessibility a bare backdrop div can't: `role="dialog"` + `aria-modal`, Escape to close, focus trapped
+inside while open, and focus restored to the trigger on close. Branded **Ember** — favicon at
 [src/app/icon.png](src/app/icon.png), logo on the login screen. Protected by
 [src/middleware.ts](src/middleware.ts): the `app_auth` cookie is **not** the password — it holds a
 signed, 30-day-expiring HMAC token ([src/lib/auth.ts](src/lib/auth.ts), Web Crypto so it runs on the

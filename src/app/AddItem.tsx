@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createItem } from "./actions";
+import { Modal } from "./Modal";
 
 // "+ New" lives in the topbar. Opens a modal that reuses the edit-form styling
 // and the same levers as the edit panel: title, referee, deadline, and
@@ -33,9 +34,7 @@ export function AddItem({ variant = "icon" }: { variant?: "icon" | "cta" }) {
 
 function AddPanel({ onClose }: { onClose: () => void }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">New item</div>
+    <Modal title="New item" onClose={onClose}>
         <form className="edit-form" action={createItem} onSubmit={onClose}>
           <label className="ef-field ef-wide">
             <span>Title</span>
@@ -87,7 +86,6 @@ function AddPanel({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }
