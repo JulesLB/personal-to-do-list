@@ -4,10 +4,14 @@
 
 ![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs) ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white) ![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white) ![Supabase](https://img.shields.io/badge/Supabase-Postgres-3FCF8E?logo=supabase&logoColor=white) ![Claude](https://img.shields.io/badge/Claude-Haiku-D97757?logo=anthropic&logoColor=white) ![Vercel](https://img.shields.io/badge/Vercel-deploy-000000?logo=vercel) ![License](https://img.shields.io/badge/license-MIT-blue)
 
-### See it live
+### Status: paused (July 2026)
 
-- **[Watch the 60-second demo](https://ember-personal-todo.vercel.app/landing)** — the whole loop runs in one phone: text the bot, watch it rank, see it go red, see the escalation, watch a finished task burn to ash.
-- **[Try the bot yourself](https://t.me/PRactical_to_do_bot)** — open it in Telegram, send one thing you keep avoiding, and it replies with a link to your own board. No signup, no password.
+I built Ember to learn app-building end to end, and it did that job. I've mothballed the live instance: the Telegram webhook is deleted, the scheduled jobs are off, and the Supabase database is paused, so **the links below won't respond**. The code, the tests, and the migrations all still run locally — see [Run it yourself](#run-it-yourself). Bringing it back up is roughly an afternoon: unpause the DB, restore `CRON_SECRET`, re-run `npm run set-webhook`, re-enable the cron jobs.
+
+### See it live (currently offline)
+
+- **[The 60-second demo](https://ember-personal-todo.vercel.app/landing)** — the whole loop in one phone: text the bot, watch it rank, see it go red, see the escalation, watch a finished task burn to ash.
+- **[The bot](https://t.me/PRactical_to_do_bot)** — open it in Telegram, send one thing you keep avoiding, and it replies with a link to your own board. No signup, no password.
 
 I built Ember solo on nights and weekends with Claude Code, both as a tool I actually use and as a way to learn proper app-building: auth, testing, migrations, deploy, cost tracking. The README below is the long version.
 
@@ -95,6 +99,7 @@ The Telegram webhook needs a public URL, so the bot goes live once deployed (or 
 - `npm run try -- "<message>"` dry-runs the Telegram intent router against your local items and prints the decision. It sends nothing.
 - `npm run set-webhook` points the bot at `APP_URL/api/telegram`.
 - `npx tsx scripts/preview-nudge.ts [evening]` prints the nudge text and buttons for the current DB without sending.
+- `node --env-file=.env scripts/dump-db.mjs` dumps every table to a JSON safety copy under `backups/` (gitignored). Needs the Supabase project active.
 
 ## Tests
 

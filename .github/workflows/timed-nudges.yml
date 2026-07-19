@@ -15,9 +15,13 @@
 # to Upstash QStash or cron-job.org if timing reliability ever matters.
 name: Timed nudges
 
+# PAUSED 2026-07-19. The project is mothballed: the Telegram webhook is deleted,
+# CRON_SECRET is rotated, and the Supabase project is paused, so this job would only
+# generate 401s and failure noise. The `schedule:` trigger is commented out rather
+# than deleted so resuming is one uncomment. workflow_dispatch stays for manual runs.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:
