@@ -19,6 +19,8 @@ model User {
   email          String?
   timezone       String    @default("Asia/Hong_Kong")
   onboardingStep String   @default("done") // M5: "new" until first capture, then "done"
+  lastMorningNudgeOn String? // PRD-18: local date the morning digest last fired
+  lastEveningNudgeOn String? // PRD-18: local date the evening digest last fired
   createdAt      DateTime  @default(now())
   items          Item[]
   referees       Referee[]

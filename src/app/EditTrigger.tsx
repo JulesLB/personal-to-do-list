@@ -5,14 +5,15 @@ import { updateItem, remove, retire } from "./actions";
 import { Modal } from "./Modal";
 
 // Narrowed, fully-serializable view of an item for the client. deadline is the
-// HKT YYYY-MM-DD the date input expects, computed on the server with isoHKT.
-// What you can edit. Type and importance aren't here on purpose: type is derived
-// from deadline+repeats, and importance is judged by the classifier, not clicked.
+// YYYY-MM-DD (in the user's timezone) the date input expects, computed on the
+// server with isoDate. What you can edit. Type and importance aren't here on
+// purpose: type is derived from deadline+repeats, and importance is judged by the
+// classifier, not clicked.
 export type EditableItem = {
   id: number;
   title: string;
   deadline: string | null;
-  // M8: HH:MM (HKT) of the precise reminder time, for the <input type="time">.
+  // M8: HH:MM (local) of the precise reminder time, for the <input type="time">.
   dueTime: string | null;
   referee: string | null;
   cadence: string | null;

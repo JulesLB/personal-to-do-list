@@ -16,12 +16,17 @@ model User {
   telegramChatId String    @unique
   name           String?
   email          String?
-  timezone       String    @default("Asia/Hong_Kong") // PRD-18 will honor this; crons stay HKT for now
+  timezone       String    @default("Asia/Hong_Kong") // PRD-18: digests fire at 08:00/20:00 in this zone
   // M5 first-run activation: "new" until the first captured item, then "done".
   // Defaults to "done" so the migration backfills existing users past onboarding;
   // resolveUser stamps "new" only on genuinely fresh chats. The referee beat (parked)
   // will slot an intermediate step in here.
   onboardingStep String   @default("done")
+  // PRD-18 digest idempotency: the local date (YYYY-MM-DD in the user's timezone)
+  // each daily digest last fired, so the 5-min tick sends morning/evening exactly
+  // once per local day even though it evaluates every user on every tick.
+  lastMorningNudgeOn String?
+  lastEveningNudgeOn String?
   createdAt      DateTime  @default(now())
   items          Item[]
   referees       Referee[]

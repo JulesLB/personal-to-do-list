@@ -2,10 +2,12 @@
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { deriveType, isoHKT } from "@/lib/rank";
+import { deriveType } from "@/lib/rank";
+import { DEFAULT_TZ, isoDate, deadlineInstant, timeInstant, isValidTimeZone } from "@/lib/datetime";
 import { forceAnalysis } from "@/lib/reviewAnalysis";
 import { currentUser } from "@/lib/session";
 import { clampTitle } from "@/lib/validate";
+import { setTimezone } from "@/lib/user";
 
 // Both control surfaces read the same items, so every mutation refreshes both the
 // board and the Review page.
@@ -64,13 +66,14 @@ export async function updateItem(id: number, formData: FormData) {
   if (!me) return;
   const cur = await prisma.item.findFirst({ where: { id, userId: me.id } });
   if (!cur) return;
+  const tz = me.timezone || DEFAULT_TZ;
   const deadlineStr = String(formData.get("deadline") ?? "");
   // M8: an optional clock time pins a precise reminder. A time with no date implies
   // today, so it anchors the deadline to today too (a timed ping is a dated task).
   const dueTimeStr = String(formData.get("dueTime") ?? "");
-  const dayStr = deadlineStr || (dueTimeStr ? isoHKT(new Date()) : "");
-  const deadline = dayStr ? new Date(dayStr + "T09:00:00+08:00") : null;
-  const dueAt = dueTimeStr && dayStr ? new Date(`${dayStr}T${dueTimeStr}:00+08:00`) : null;
+  const dayStr = deadlineStr || (dueTimeStr ? isoDate(new Date(), tz) : "");
+  const deadline = dayStr ? deadlineInstant(dayStr, tz) : null;
+  const dueAt = dueTimeStr && dayStr ? timeInstant(dayStr, dueTimeStr, tz) : null;
   const dueAtChanged = (cur.dueAt?.getTime() ?? null) !== (dueAt?.getTime() ?? null);
   const cadence = String(formData.get("cadence") || "") || null;
   const pushedLater =
@@ -106,13 +109,14 @@ export async function createItem(formData: FormData) {
   if (!title) return;
   const me = await currentUser();
   if (!me) return;
+  const tz = me.timezone || DEFAULT_TZ;
   const deadlineStr = String(formData.get("deadline") ?? "");
   // M8: a clock time arms a precise ping; with no date it implies today, which also
   // anchors the deadline so the item is a dated task rather than parking.
   const dueTimeStr = String(formData.get("dueTime") ?? "");
-  const dayStr = deadlineStr || (dueTimeStr ? isoHKT(new Date()) : "");
-  const deadline = dayStr ? new Date(dayStr + "T09:00:00+08:00") : null;
-  const dueAt = dueTimeStr && dayStr ? new Date(`${dayStr}T${dueTimeStr}:00+08:00`) : null;
+  const dayStr = deadlineStr || (dueTimeStr ? isoDate(new Date(), tz) : "");
+  const deadline = dayStr ? deadlineInstant(dayStr, tz) : null;
+  const dueAt = dueTimeStr && dayStr ? timeInstant(dayStr, dueTimeStr, tz) : null;
   const cadence = String(formData.get("cadence") || "") || null;
   await prisma.item.create({
     data: {
@@ -133,6 +137,18 @@ export async function remove(id: number) {
   const me = await currentUser();
   if (!me) return;
   await prisma.item.deleteMany({ where: { id, userId: me.id } });
+  revalidateBoards();
+}
+
+// PRD-18: the board reports the browser's timezone (where the device actually is)
+// so a traveling user's nudges follow them with zero effort. Called from a small
+// client island on load; only writes when the zone actually changed, and only
+// accepts a real IANA zone. Revalidates so date labels re-render in the new zone.
+export async function updateTimezone(timezone: string) {
+  const me = await currentUser();
+  if (!me) return;
+  if (!isValidTimeZone(timezone) || timezone === me.timezone) return;
+  await setTimezone(me.id, timezone);
   revalidateBoards();
 }
 

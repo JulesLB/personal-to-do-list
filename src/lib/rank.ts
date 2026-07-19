@@ -1,53 +1,34 @@
 import type { Item } from "@prisma/client";
+import { DEFAULT_TZ, dayNumber, isoDate, instantAtLocal, partsInTz } from "./datetime";
 
 const DAY = 24 * 60 * 60 * 1000;
 
 export type Heat = "burning" | "soon" | "later";
 
-// Single user, based in Hong Kong. HK has no daylight saving, so a fixed
-// +8 offset is exact. All day-boundary math runs in HKT regardless of the
-// server timezone (Vercel runs UTC) so "due today" never drifts by a day.
-const HK_OFFSET = 8 * 60 * 60 * 1000;
+// All day-boundary math runs in the caller's timezone (PRD-18), defaulting to
+// Hong Kong so any caller that doesn't pass a zone keeps the original behavior.
+// dayNumber gives a DST-safe calendar-day index, so differences below are exact
+// day counts regardless of the server timezone (Vercel runs UTC).
 
-export const startOfDayHKT = (d: Date) =>
-  new Date(Math.floor((d.getTime() + HK_OFFSET) / DAY) * DAY - HK_OFFSET);
-
-export const isoHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(0, 10);
-
-// HH:MM of an instant in HKT, for the board's <input type="time"> (M8 timed nudges).
-export const timeHKT = (d: Date) => new Date(d.getTime() + HK_OFFSET).toISOString().slice(11, 16);
-
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-// A human "now" in HKT for the classifier: date, clock time, and weekday. The
-// router resolves relative dates ("Friday", "tomorrow") and relative/absolute
-// times ("in 2 hours", "at 7pm") against this, so it must carry the time, not just
-// the date — and in HKT, since a UTC date is a day behind before 08:00 HKT.
-export const nowLabelHKT = (d: Date) => {
-  const shifted = new Date(d.getTime() + HK_OFFSET);
-  return `${isoHKT(d)} ${timeHKT(d)} (${WEEKDAYS[shifted.getUTCDay()]}) HKT`;
-};
-
-// Did you tap "I'll do it today" earlier today (HKT)? The evening check uses
-// this to call out a promise you made this morning and haven't kept.
-export function promisedToday(item: Item, now: Date): boolean {
+// Did you tap "I'll do it today" earlier today (the user's local day)? The evening
+// check uses this to call out a promise made this morning and not yet kept.
+export function promisedToday(item: Item, now: Date, tz: string = DEFAULT_TZ): boolean {
   return (
-    !!item.promisedAt &&
-    startOfDayHKT(item.promisedAt).getTime() === startOfDayHKT(now).getTime()
+    !!item.promisedAt && dayNumber(item.promisedAt, tz) === dayNumber(now, tz)
   );
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// HKT calendar parts of an instant.
-const hktYMD = (d: Date) => {
-  const s = new Date(d.getTime() + HK_OFFSET);
-  return { y: s.getUTCFullYear(), m: s.getUTCMonth(), day: s.getUTCDate() };
+// Local calendar parts of an instant.
+const ymd = (d: Date, tz: string) => {
+  const p = partsInTz(d, tz);
+  return { y: p.y, m: p.m, day: p.day };
 };
 
-// The instant at 09:00 HKT (= 01:00 UTC) on a given HKT calendar date, matching
-// how deadlines are stored.
-const hktAt9 = (y: number, m: number, day: number) => new Date(Date.UTC(y, m, day, 1, 0, 0));
+// The instant at 09:00 local time on a given calendar date, matching how
+// date-only deadlines are stored.
+const at9 = (y: number, m: number, day: number, tz: string) => instantAtLocal(y, m, day, 9, 0, tz);
 
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 
@@ -59,14 +40,15 @@ const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).ge
 function cadenceOccurrence(
   base: { y: number; m: number; day: number },
   cadence: string | null,
-  k: number
+  k: number,
+  tz: string
 ): Date {
-  if (cadence === "daily") return hktAt9(base.y, base.m, base.day + k);
-  if (cadence === "weekly") return hktAt9(base.y, base.m, base.day + 7 * k);
+  if (cadence === "daily") return at9(base.y, base.m, base.day + k, tz);
+  if (cadence === "weekly") return at9(base.y, base.m, base.day + 7 * k, tz);
   const month = base.m + k;
   const year = base.y + Math.floor(month / 12);
   const m = ((month % 12) + 12) % 12;
-  return hktAt9(year, m, Math.min(base.day, daysInMonth(year, m)));
+  return at9(year, m, Math.min(base.day, daysInMonth(year, m)), tz);
 }
 
 // When a commitment is next due. The day-of-month / weekday is anchored on the
@@ -76,36 +58,36 @@ function cadenceOccurrence(
 // the first occurrence after lastDoneAt. Keys off lastDoneAt, not lastNudgedAt, so
 // nudging never resets the clock. Legacy rows with no deadline keep the original
 // behavior: one cadence period past the last completion (or creation).
-export function commitmentDue(item: Item): Date {
+export function commitmentDue(item: Item, tz: string = DEFAULT_TZ): Date {
   if (item.deadline) {
-    const base = hktYMD(item.deadline);
+    const base = ymd(item.deadline, tz);
     let k = 0;
-    let due = cadenceOccurrence(base, item.cadence, 0);
+    let due = cadenceOccurrence(base, item.cadence, 0, tz);
     // Advance only once honored, to the first occurrence strictly after it. The
     // guard is a safety cap; in practice k is 0 (not yet done) or 1 (done on time).
     while (item.lastDoneAt && due.getTime() <= item.lastDoneAt.getTime() && k < 2400) {
       k += 1;
-      due = cadenceOccurrence(base, item.cadence, k);
+      due = cadenceOccurrence(base, item.cadence, k, tz);
     }
     return due;
   }
-  return cadenceOccurrence(hktYMD(item.lastDoneAt ?? item.createdAt), item.cadence, 1);
+  return cadenceOccurrence(ymd(item.lastDoneAt ?? item.createdAt, tz), item.cadence, 1, tz);
 }
 
 // One more period past the due date: the "you skipped a whole extra cycle" line.
-const commitmentCriticalAt = (item: Item): Date =>
-  commitmentDue({ ...item, lastDoneAt: commitmentDue(item) } as Item);
+const commitmentCriticalAt = (item: Item, tz: string): Date =>
+  commitmentDue({ ...item, lastDoneAt: commitmentDue(item, tz) } as Item, tz);
 
-// Calendar days (HKT) the current cycle is past due. Negative = not due yet.
-const overdueDaysCommit = (item: Item, now: Date) =>
-  Math.round((startOfDayHKT(now).getTime() - startOfDayHKT(commitmentDue(item)).getTime()) / DAY);
+// Calendar days the current cycle is past due. Negative = not due yet.
+const overdueDaysCommit = (item: Item, now: Date, tz: string) =>
+  dayNumber(now, tz) - dayNumber(commitmentDue(item, tz), tz);
 
 // How early a commitment starts "heating up" before its due date.
 const soonLead = (cadence: string | null) =>
   cadence === "monthly" ? 7 : cadence === "daily" ? 1 : 2;
 
-const pastCommit = (item: Item, now: Date, at: Date) =>
-  startOfDayHKT(now).getTime() >= startOfDayHKT(at).getTime();
+const pastCommit = (item: Item, now: Date, at: Date, tz: string) =>
+  dayNumber(now, tz) >= dayNumber(at, tz);
 
 // Type is never set by hand: it falls out of the date controls. A cadence means
 // it repeats (commitment); a one-off date is a task; neither is parked. So the
@@ -121,12 +103,12 @@ export function deriveType(
 
 // Ordering is strictly lexicographic: date first, importance second. The
 // soonest (or most overdue) due date always wins outright; importance only
-// decides between two items that fall on the SAME calendar day (HKT). Nothing
-// else enters the sort. A task's date is its deadline, a commitment's is its
-// computed due date (see effectiveDate); parking is excluded upstream.
-export function compareActionable(a: Item, b: Item): number {
-  const da = effectiveDayHKT(a);
-  const db = effectiveDayHKT(b);
+// decides between two items that fall on the SAME calendar day. Nothing else
+// enters the sort. A task's date is its deadline, a commitment's is its computed
+// due date (see effectiveDate); parking is excluded upstream.
+export function compareActionable(a: Item, b: Item, tz: string = DEFAULT_TZ): number {
+  const da = effectiveDay(a, tz);
+  const db = effectiveDay(b, tz);
   if (da !== db) return da - db; // earlier date is more urgent
   if (a.important !== b.important) return a.important ? -1 : 1; // important breaks the tie
   return a.id - b.id; // stable
@@ -136,65 +118,59 @@ export function compareActionable(a: Item, b: Item): number {
 // AND tomorrow read as burning (red), 2–3 days as soon (amber), the rest calm.
 // So "due tomorrow" is red even while the item still sits in the "Heating up"
 // band. Commitments key off their computed due date.
-export function dueTone(item: Item, now: Date): Heat {
-  const target = item.type === "commitment" ? commitmentDue(item) : item.deadline;
+export function dueTone(item: Item, now: Date, tz: string = DEFAULT_TZ): Heat {
+  const target = item.type === "commitment" ? commitmentDue(item, tz) : item.deadline;
   if (!target) return "later";
-  const cal = Math.round((startOfDayHKT(target).getTime() - startOfDayHKT(now).getTime()) / DAY);
+  const cal = dayNumber(target, tz) - dayNumber(now, tz);
   if (cal <= 1) return "burning";
   if (cal <= 3) return "soon";
   return "later";
 }
 
-export function heatOf(item: Item, now: Date): Heat {
+export function heatOf(item: Item, now: Date, tz: string = DEFAULT_TZ): Heat {
   if (item.type === "commitment") {
-    const od = overdueDaysCommit(item, now);
+    const od = overdueDaysCommit(item, now, tz);
     if (od >= 0) return "burning";
     if (od >= -soonLead(item.cadence)) return "soon";
     return "later";
   }
   if (!item.deadline) return "later";
-  const cal = (startOfDayHKT(item.deadline).getTime() - startOfDayHKT(now).getTime()) / DAY;
+  const cal = dayNumber(item.deadline, tz) - dayNumber(now, tz);
   if (cal <= 0) return "burning";
   if (cal <= 3) return "soon";
   return "later";
 }
 
-// Positive = past due. Tasks: calendar days past the deadline (HKT).
-// Commitments: days drifted beyond one cadence period. -Infinity = not applicable.
-export function daysOverdue(item: Item, now: Date): number {
-  if (item.type === "commitment") return overdueDaysCommit(item, now);
+// Positive = past due. Tasks: calendar days past the deadline. Commitments: days
+// drifted beyond one cadence period. -Infinity = not applicable.
+export function daysOverdue(item: Item, now: Date, tz: string = DEFAULT_TZ): number {
+  if (item.type === "commitment") return overdueDaysCommit(item, now, tz);
   if (!item.deadline) return -Infinity;
-  return Math.round(
-    (startOfDayHKT(now).getTime() - startOfDayHKT(item.deadline).getTime()) / DAY
-  );
+  return dayNumber(now, tz) - dayNumber(item.deadline, tz);
 }
 
 // The accountability trigger: blunt copy + referee-first buttons.
 // Tasks 3+ days overdue, or a commitment that has missed a full extra cycle.
-export function isCritical(item: Item, now: Date): boolean {
-  if (item.type === "commitment") return pastCommit(item, now, commitmentCriticalAt(item));
-  return item.type === "task" && !!item.deadline && daysOverdue(item, now) >= 3;
+export function isCritical(item: Item, now: Date, tz: string = DEFAULT_TZ): boolean {
+  if (item.type === "commitment") return pastCommit(item, now, commitmentCriticalAt(item, tz), tz);
+  return item.type === "task" && !!item.deadline && daysOverdue(item, now, tz) >= 3;
 }
 
-export function deadlineLabel(deadline: Date | null, now: Date): string | null {
+export function deadlineLabel(deadline: Date | null, now: Date, tz: string = DEFAULT_TZ): string | null {
   if (!deadline) return null;
-  const cal = Math.round(
-    (startOfDayHKT(deadline).getTime() - startOfDayHKT(now).getTime()) / DAY
-  );
+  const cal = dayNumber(deadline, tz) - dayNumber(now, tz);
   if (cal < 0) return `${-cal}d overdue`;
   if (cal === 0) return "due today";
   if (cal === 1) return "due tomorrow";
   if (cal <= 7) return `due in ${cal} days`;
-  return `due ${isoHKT(deadline)}`;
+  return `due ${isoDate(deadline, tz)}`;
 }
 
 // Like deadlineLabel but always expressed in days, even past a week. The board
 // rows want "due in 12 days", not an ISO date. Negative = overdue.
-export function dueInLabel(deadline: Date | null, now: Date): string | null {
+export function dueInLabel(deadline: Date | null, now: Date, tz: string = DEFAULT_TZ): string | null {
   if (!deadline) return null;
-  const cal = Math.round(
-    (startOfDayHKT(deadline).getTime() - startOfDayHKT(now).getTime()) / DAY
-  );
+  const cal = dayNumber(deadline, tz) - dayNumber(now, tz);
   if (cal < 0) return `${-cal}d overdue`;
   if (cal === 0) return "due today";
   if (cal === 1) return "due tomorrow";
@@ -208,11 +184,11 @@ export function cadenceLabel(cadence: string | null): string | null {
 
 // A commitment's due date is computed from cadence (never typed). Shows the date
 // so "on fire" always has a visible reason: "due 19 Jul", "due 19 Jul · 3d overdue".
-export function commitmentDueLabel(item: Item, now: Date): string {
-  const due = commitmentDue(item);
-  const { m, day } = hktYMD(due);
+export function commitmentDueLabel(item: Item, now: Date, tz: string = DEFAULT_TZ): string {
+  const due = commitmentDue(item, tz);
+  const { m, day } = ymd(due, tz);
   const date = `${day} ${MONTHS[m]}`;
-  const od = overdueDaysCommit(item, now);
+  const od = overdueDaysCommit(item, now, tz);
   if (od > 0) return `due ${date} · ${od}d overdue`;
   if (od === 0) return `due ${date} · today`;
   return `due ${date}`;
@@ -234,48 +210,46 @@ export function deferState(item: Item): { count: number } | null {
 // flag and the Review's death zone.
 export const STALE_PARKING_DAYS = 7;
 
-export function ageDaysHKT(createdAt: Date, now: Date): number {
-  return Math.round(
-    (startOfDayHKT(now).getTime() - startOfDayHKT(createdAt).getTime()) / DAY
-  );
+export function ageDays(createdAt: Date, now: Date, tz: string = DEFAULT_TZ): number {
+  return dayNumber(now, tz) - dayNumber(createdAt, tz);
 }
 
-export function parkingAgeLabel(createdAt: Date, now: Date): string {
-  const d = ageDaysHKT(createdAt, now);
+export function parkingAgeLabel(createdAt: Date, now: Date, tz: string = DEFAULT_TZ): string {
+  const d = ageDays(createdAt, now, tz);
   if (d <= 0) return "added today";
   if (d === 1) return "added yesterday";
   return `added ${d}d ago`;
 }
 
-export function isStaleParking(item: Item, now: Date): boolean {
-  return item.type === "parking" && ageDaysHKT(item.createdAt, now) >= STALE_PARKING_DAYS;
+export function isStaleParking(item: Item, now: Date, tz: string = DEFAULT_TZ): boolean {
+  return item.type === "parking" && ageDays(item.createdAt, now, tz) >= STALE_PARKING_DAYS;
 }
 
 // The date an item is "about": a task's deadline, a commitment's computed due.
-const effectiveDate = (item: Item): number =>
+const effectiveDate = (item: Item, tz: string): number =>
   item.type === "commitment"
-    ? commitmentDue(item).getTime()
+    ? commitmentDue(item, tz).getTime()
     : item.deadline?.getTime() ?? Infinity;
 
-// That date floored to its HKT calendar day, so "due on the same day" compares
-// equal regardless of the stored time-of-day. Infinity (undated) stays last.
-const effectiveDayHKT = (item: Item): number => {
-  const t = effectiveDate(item);
-  return Number.isFinite(t) ? startOfDayHKT(new Date(t)).getTime() : Infinity;
+// That date as its calendar-day index, so "due on the same day" compares equal
+// regardless of the stored time-of-day. Infinity (undated) stays last.
+const effectiveDay = (item: Item, tz: string): number => {
+  const t = effectiveDate(item, tz);
+  return Number.isFinite(t) ? dayNumber(new Date(t), tz) : Infinity;
 };
 
 // Every list uses the same order: date first, importance second. (Was a
 // separate date-only sort; folded into the one comparator so the calm bands
 // can't disagree with the hero / On-fire order.)
-export function sortByDate(rows: Ranked[]): Ranked[] {
-  return [...rows].sort((a, b) => compareActionable(a.item, b.item));
+export function sortByDate(rows: Ranked[], tz: string = DEFAULT_TZ): Ranked[] {
+  return [...rows].sort((a, b) => compareActionable(a.item, b.item, tz));
 }
 
 export type Ranked = { item: Item; heat: Heat };
 
-export function rankActionable(items: Item[], now: Date): Ranked[] {
+export function rankActionable(items: Item[], now: Date, tz: string = DEFAULT_TZ): Ranked[] {
   return items
     .filter((i) => i.type !== "parking")
-    .map((item) => ({ item, heat: heatOf(item, now) }))
-    .sort((a, b) => compareActionable(a.item, b.item));
+    .map((item) => ({ item, heat: heatOf(item, now, tz) }))
+    .sort((a, b) => compareActionable(a.item, b.item, tz));
 }

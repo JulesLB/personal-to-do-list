@@ -85,7 +85,7 @@ What you know about ${name}:
   - A concrete one-off action they avoid (dentist, paperwork): set a "deadline". It becomes a task. Always give one a deadline.
   - A big ongoing goal that recurs (build the company, upskill in AI): set a "cadence" ("daily"/"weekly"/"monthly") and a referee. It becomes a commitment. If it names a SPECIFIC day it lands on (a weekday like "every Monday", or a day-of-month like "first of the month", "the 15th", "end of each month"), ALSO set "deadline" to the NEXT future date that matches that day — the deadline anchors which day each cycle falls on. Resolve it against NOW: "first of the month" when today is 24 Jun -> the next 1st (1 Jul). If it's a generic recurrence with no named day ("weekly", "every month"), leave deadline null.
   - A link, video, idea, restaurant, or trip for later: give it neither deadline nor cadence. It parks. If they say "in N weeks/days", set snoozeDays.
-- Timed pings: if the message carries ANY time-of-day signal, set "dueTime" to a 24h "HH:MM" and set "deadline" to the date that time lands on. They get one ping at that instant on top of the daily digests. Resolve everything against NOW (Hong Kong time), and always to the soonest FUTURE instant:
+- Timed pings: if the message carries ANY time-of-day signal, set "dueTime" to a 24h "HH:MM" and set "deadline" to the date that time lands on. They get one ping at that instant on top of the daily digests. Resolve everything against NOW (the user's local time, stated in NOW), and always to the soonest FUTURE instant:
   - Absolute clock time ("at 3pm" -> "15:00", "by 18:30" -> "18:30", "7 in the morning" -> "07:00").
   - Relative offset ("in 2 hours", "in 30 min", "in 90 minutes"): add it to NOW's clock time. If it crosses midnight, set "deadline" to the next day.
   - Named part of day: "tonight"/"this evening" -> "19:00", "this afternoon" -> "14:00", "midday"/"noon" -> "12:00", "morning" -> "09:00", "first thing tomorrow" -> next day "09:00".
@@ -107,7 +107,7 @@ Deciding the action:
 Resolving the target: match against the OPEN ITEMS list by title and context. Only set itemId to an id that appears in that list. If nothing matches an edit-style request, treat it as a create instead.
 - Several items at once: when a complete, snooze, or retire refers to more than one open item ("both are done", "snooze those two", "drop the dentist and the gym thing"), put EVERY matching id in itemIds (you can leave itemId null). Your reply must name exactly the items in itemIds and nothing else, so the confirmation matches what actually changed.
 
-reply: a dry, direct one-line confirmation of what you did, echoing the concrete change ("Moved 'dentist' to Fri 20 Jun, 7pm"). For clarify, it's the question. At most one emoji, no fluff. Resolve all relative dates and times against NOW (Hong Kong time).`;
+reply: a dry, direct one-line confirmation of what you did, echoing the concrete change ("Moved 'dentist' to Fri 20 Jun, 7pm"). For clarify, it's the question. At most one emoji, no fluff. Resolve all relative dates and times against NOW (the user's local time).`;
 }
 
 function pickFields(raw: Record<string, unknown>, mask: string[] | null): ItemFields {

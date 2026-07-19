@@ -1,5 +1,6 @@
 import type { InlineKeyboard } from "./telegram";
-import { deadlineLabel, timeHKT } from "./rank";
+import { deadlineLabel } from "./rank";
+import { DEFAULT_TZ, timeOfDay } from "./datetime";
 import type { Item } from "@prisma/client";
 
 // M8 deadline-aware nudges. An item can carry a precise `dueAt` instant (set
@@ -32,9 +33,9 @@ export type TimedNudge = { text: string; keyboard: InlineKeyboard };
 
 // A single-item ping with one tick. The tick uses a distinct `tdone:` callback so
 // the webhook confirms in place instead of re-rendering the whole daily digest.
-export function buildTimedNudge(item: Item, now: Date): TimedNudge {
-  const when = item.dueAt ? timeHKT(item.dueAt) : null;
-  const lead = item.deadline ? deadlineLabel(item.deadline, now) : null;
+export function buildTimedNudge(item: Item, now: Date, tz: string = DEFAULT_TZ): TimedNudge {
+  const when = item.dueAt ? timeOfDay(item.dueAt, tz) : null;
+  const lead = item.deadline ? deadlineLabel(item.deadline, now, tz) : null;
   // "due today" is implied by the ping firing now, so prefer the clock time.
   const meta = [when, lead && lead !== "due today" ? lead : null].filter(Boolean).join(" · ");
   const text = `⏰ Reminder: ${item.title}${meta ? `\n${meta}` : ""}`;

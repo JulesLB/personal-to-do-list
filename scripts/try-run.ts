@@ -7,7 +7,7 @@ process.env.DATABASE_URL = "file:./dev.db";
 async function main() {
   const { PrismaClient } = await import("@prisma/client");
   const { interpret } = await import("../src/lib/classify");
-  const { nowLabelHKT } = await import("../src/lib/rank");
+  const { nowLabel } = await import("../src/lib/datetime");
 
   const msg = process.argv.slice(2).join(" ").trim();
   if (!msg) {
@@ -16,7 +16,7 @@ async function main() {
   }
 
   const prisma = new PrismaClient();
-  const now = nowLabelHKT(new Date());
+  const now = nowLabel(new Date());
   const open = await prisma.item.findMany({ where: { status: "open" }, orderBy: { id: "asc" } });
   const lite = open.map((i) => ({
     id: i.id,

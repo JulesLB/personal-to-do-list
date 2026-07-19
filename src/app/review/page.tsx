@@ -1,7 +1,8 @@
 import type { Item } from "@prisma/client";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { dueInLabel, commitmentDue, daysOverdue, isoHKT, timeHKT } from "@/lib/rank";
+import { dueInLabel, commitmentDue, daysOverdue } from "@/lib/rank";
+import { DEFAULT_TZ, isoDate, timeOfDay } from "@/lib/datetime";
 import { triage, BUCKET_WEIGHT } from "@/lib/triage";
 import { weeklyReceipts } from "@/lib/receipts";
 import { readCachedAnalysis, forceAnalysis } from "@/lib/reviewAnalysis";
@@ -13,11 +14,11 @@ import { ReviewClient, type ReviewEntry } from "./ReviewClient";
 
 export const dynamic = "force-dynamic";
 
-const toEditable = (i: Item) => ({
+const toEditable = (i: Item, tz: string) => ({
   id: i.id,
   title: i.title,
-  deadline: i.deadline ? isoHKT(i.deadline) : null,
-  dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
+  deadline: i.deadline ? isoDate(i.deadline, tz) : null,
+  dueTime: i.dueAt ? timeOfDay(i.dueAt, tz) : null,
   referee: i.referee,
   cadence: i.cadence,
 });
@@ -40,10 +41,11 @@ export default async function Review() {
         }),
       ])
     : [[], []];
+  const tz = me?.timezone || DEFAULT_TZ;
   const open = allItems.filter((i) => i.status === "open");
 
-  const t = triage(open, events, now);
-  const receipts = weeklyReceipts(allItems, events, now);
+  const t = triage(open, events, now, tz);
+  const receipts = weeklyReceipts(allItems, events, now, tz);
   // Cold start: until there's real behavior to read, show generic encouragement
   // and don't call the model at all (no fabricated "pattern", no wasted tokens).
   const ready = coachReady(allItems, events, now);
@@ -60,14 +62,14 @@ export default async function Review() {
   // A flat count for the scoreboard: how many open items are already past due. It
   // cuts across buckets (an overdue item may also be dodged or escalated), so it's
   // its own tally, not a triage bucket.
-  const overdue = open.filter((i) => daysOverdue(i, now) > 0).length;
+  const overdue = open.filter((i) => daysOverdue(i, now, tz) > 0).length;
 
   const entries: ReviewEntry[] = t.entries.map(({ item, bucket }) => {
     const due =
       item.type === "commitment"
-        ? dueInLabel(commitmentDue(item), now)
+        ? dueInLabel(commitmentDue(item, tz), now, tz)
         : item.deadline
-          ? dueInLabel(item.deadline, now)
+          ? dueInLabel(item.deadline, now, tz)
           : null;
     // Death zone shows the board's red "decide it" flag instead of a text detail,
     // so it's left null here and rendered as a chip in the client.
@@ -88,7 +90,7 @@ export default async function Review() {
       detail,
       commitment: item.type === "commitment",
       waUrl: wa,
-      edit: toEditable(item),
+      edit: toEditable(item, tz),
     };
   });
 

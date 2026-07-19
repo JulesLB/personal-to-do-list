@@ -7,8 +7,16 @@ import { createRefereeToken, passwordMatches } from "@/lib/auth";
 import { boardLinkButton, wantsBoardLink } from "@/lib/boardLink";
 import { transcribeVoice } from "@/lib/voice";
 import { snoozeUntil, snoozeLabel, isSnoozePreset } from "@/lib/snooze";
-import { deriveType, isoHKT, nowLabelHKT } from "@/lib/rank";
-import { resolveUser, refereeLabels, isOwnerUser } from "@/lib/user";
+import { deriveType } from "@/lib/rank";
+import {
+  DEFAULT_TZ,
+  isoDate,
+  nowLabel,
+  deadlineInstant,
+  timeInstant,
+  isValidTimeZone,
+} from "@/lib/datetime";
+import { resolveUser, refereeLabels, isOwnerUser, setTimezone } from "@/lib/user";
 import { botRateLimited, recordBotMessage } from "@/lib/ratelimit";
 import { overMonthlyBudget } from "@/lib/usage";
 import { clampTitle } from "@/lib/validate";
@@ -25,14 +33,15 @@ export const dynamic = "force-dynamic";
 
 const ok = () => NextResponse.json({ ok: true });
 
-// Deadlines live at 09:00 HKT so "due today" never drifts on the UTC server.
-const toDeadline = (d: string | null | undefined) =>
-  d ? new Date(d + "T09:00:00+08:00") : null;
+// Deadlines live at 09:00 in the user's own timezone (PRD-18) so "due today" is
+// judged on their calendar, not the UTC server's.
+const toDeadline = (d: string | null | undefined, tz: string) =>
+  d ? deadlineInstant(d, tz) : null;
 
 // M8: a precise reminder instant. Combine the day (a YYYY-MM-DD, defaulting to
-// today HKT) with a 24h HH:MM clock time, both interpreted in HKT.
-const toDueAt = (day: string | null | undefined, time: string) =>
-  new Date(`${day || isoHKT(new Date())}T${time}:00+08:00`);
+// today in the user's tz) with a 24h HH:MM clock time, both interpreted in tz.
+const toDueAt = (day: string | null | undefined, time: string, tz: string) =>
+  timeInstant(day || isoDate(new Date(), tz), time, tz);
 
 const logEvent = (itemId: number, kind: string) =>
   prisma.event.create({ data: { itemId, kind } }).catch(() => {});
@@ -113,6 +122,8 @@ export async function POST(req: NextRequest) {
     update?.message?.chat
   );
   const user = await resolveUser(incomingChatId, { name: incomingName });
+  // PRD-18: every date the user creates or sees is interpreted in their timezone.
+  const tz = user.timezone || DEFAULT_TZ;
 
   // Inline button taps from the daily nudge.
   const cb = update?.callback_query;
@@ -125,7 +136,7 @@ export async function POST(req: NextRequest) {
         .updateMany({
           where: { id, userId: user.id },
           data: {
-            snoozeUntil: snoozeUntil(snz[2], new Date()),
+            snoozeUntil: snoozeUntil(snz[2], new Date(), tz),
             lastNudgedAt: null,
             deferCount: { increment: 1 },
           },
@@ -246,6 +257,31 @@ export async function POST(req: NextRequest) {
       return ok();
     }
 
+    // PRD-18: timezone. Normally set silently from the board (the browser reports
+    // your device's zone), so this manual override is the fallback. `/tz` shows the
+    // current zone; `/tz <IANA zone>` sets it. Your 08:00 / 20:00 digests then fire
+    // on that clock.
+    if (lower === "/tz" || lower.startsWith("/tz ")) {
+      const arg = text.slice(3).trim();
+      if (!arg) {
+        await sendMessage(
+          chatId,
+          `Your timezone is ${tz}. Your daily nudges land at 08:00 and 20:00 there.\n\nIt updates on its own when you open your board, so you usually don't need to touch this. To set it by hand: /tz Europe/London`
+        );
+        return ok();
+      }
+      if (!isValidTimeZone(arg)) {
+        await sendMessage(
+          chatId,
+          `"${arg}" isn't a timezone I recognize. Use an IANA name like Europe/London, America/New_York, or Asia/Tokyo.`
+        );
+        return ok();
+      }
+      await setTimezone(user.id, arg).catch(() => {});
+      await sendMessage(chatId, `Timezone set to ${arg}. Your nudges now land at 08:00 and 20:00 there.`);
+      return ok();
+    }
+
     // Mint a login link for the web board (PRD-11). The link carries a signed
     // token bound to this user; opening it sets their session. Triggered by the
     // exact command, the login aliases, or a natural-language ask ("where's my
@@ -352,7 +388,7 @@ export async function POST(req: NextRequest) {
     const due = lower.match(/^\/?due\s+(\d+)\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?/);
     if (due) {
       const id = Number(due[1]);
-      const date = new Date(due[2] + "T09:00:00+08:00");
+      const date = deadlineInstant(due[2], tz);
       const time = due[3] || null; // optional HH:MM → a precise timed ping (M8)
       const cur = await prisma.item.findFirst({ where: { id, userId: user.id } });
       const pushedLater = !!cur?.deadline && date.getTime() > cur.deadline.getTime();
@@ -366,7 +402,7 @@ export async function POST(req: NextRequest) {
             lastNudgedAt: null,
             // A clock time arms the timed ping; clear the idempotency stamp so the
             // new instant can fire. No time given leaves any existing dueAt alone.
-            ...(time ? { dueAt: toDueAt(due[2], time), dueNudgedAt: null } : {}),
+            ...(time ? { dueAt: toDueAt(due[2], time, tz), dueNudgedAt: null } : {}),
             ...(pushedLater ? { deferCount: { increment: 1 } } : {}),
           },
         })
@@ -407,7 +443,7 @@ export async function POST(req: NextRequest) {
     }));
     const openIds = new Set(open.map((i) => i.id));
 
-    const intent = await interpret(text, nowLabelHKT(new Date()), lite, {
+    const intent = await interpret(text, nowLabel(new Date(), tz), lite, {
       name: user.name ?? undefined,
       refereeLabels: await refereeLabels(user.id),
       userId: user.id,
@@ -476,7 +512,7 @@ export async function POST(req: NextRequest) {
       if (f.important !== undefined) data.important = f.important;
       // Deadline and cadence drive the derived type; recompute it from the values
       // that will be in place after this edit.
-      const newDeadline = "deadline" in f ? toDeadline(f.deadline) : cur?.deadline ?? null;
+      const newDeadline = "deadline" in f ? toDeadline(f.deadline, tz) : cur?.deadline ?? null;
       const newCadence = "cadence" in f ? f.cadence ?? null : cur?.cadence ?? null;
       if ("deadline" in f) data.deadline = newDeadline;
       if ("referee" in f) data.referee = f.referee;
@@ -493,11 +529,11 @@ export async function POST(req: NextRequest) {
       // dated task rather than parking.
       if ("dueTime" in f) {
         if (f.dueTime) {
-          const day = newDeadline ? isoHKT(newDeadline) : isoHKT(new Date());
-          data.dueAt = toDueAt(day, f.dueTime);
+          const day = newDeadline ? isoDate(newDeadline, tz) : isoDate(new Date(), tz);
+          data.dueAt = toDueAt(day, f.dueTime, tz);
           data.dueNudgedAt = null;
           if (!newDeadline) {
-            const dl = toDeadline(day);
+            const dl = toDeadline(day, tz);
             data.deadline = dl;
             data.type = deriveType(dl, newCadence);
           }
@@ -525,8 +561,8 @@ export async function POST(req: NextRequest) {
     // own guess, so the date is the single lever.
     // M8: a clock time arms a precise ping; it implies a dated task, so default the
     // day-anchor deadline to the ping's day when no date was given.
-    const dueAt = f.dueTime ? toDueAt(f.deadline, f.dueTime) : null;
-    const newDeadline = toDeadline(f.deadline) ?? (dueAt ? toDeadline(isoHKT(dueAt)) : null);
+    const dueAt = f.dueTime ? toDueAt(f.deadline, f.dueTime, tz) : null;
+    const newDeadline = toDeadline(f.deadline, tz) ?? (dueAt ? toDeadline(isoDate(dueAt, tz), tz) : null);
     const newCadence = f.cadence ?? null;
     await prisma.item.create({
       data: {

@@ -59,6 +59,13 @@ export async function isOwnerUser(userId: number, chatId?: string | number): Pro
   }
 }
 
+// PRD-18: persist a user's timezone, set either silently from the board (the
+// browser reports where their device is) or via the bot's `/tz` command. The
+// caller validates the zone (isValidTimeZone) before this.
+export async function setTimezone(userId: number, timezone: string): Promise<void> {
+  await prisma.user.update({ where: { id: userId }, data: { timezone } });
+}
+
 // The referee labels a user has configured, for the classifier prompt + enum.
 export async function refereeLabels(userId: number): Promise<string[]> {
   const refs = await prisma.referee.findMany({

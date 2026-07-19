@@ -1,11 +1,6 @@
 import type { Item } from "@prisma/client";
 import { currentStreak } from "./streak";
-
-const DAY = 86400000;
-const HK_OFFSET = 8 * 60 * 60 * 1000;
-// Same HKT day-index as streak.ts: floor of the +8-shifted epoch into days, so a
-// week boundary lands on the Hong Kong calendar, not the UTC server's.
-const dayNum = (d: Date) => Math.floor((d.getTime() + HK_OFFSET) / DAY);
+import { DEFAULT_TZ, dayNumber } from "./datetime";
 
 // The slice of Event the receipts read. Kept structural (not the Prisma row) so
 // the module stays pure and unit-testable against plain fixtures.
@@ -30,19 +25,19 @@ export type Receipts = {
   mostPushed: { title: string; count: number } | null;
 };
 
-function statsFor(events: ReceiptEvent[], loDay: number, hiDay: number): WeekStats {
+function statsFor(events: ReceiptEvent[], loDay: number, hiDay: number, tz: string): WeekStats {
   const inWin = (d: Date) => {
-    const n = dayNum(d);
+    const n = dayNumber(d, tz);
     return n >= loDay && n <= hiDay;
   };
-  // A promise is kept when the same item has a done Event on the same HKT day it
+  // A promise is kept when the same item has a done Event on the same local day it
   // was promised. Pre-index every done by item+day so the lookup is a Set hit.
   const doneByItemDay = new Set(
-    events.filter((e) => e.kind === "done").map((e) => `${e.itemId}:${dayNum(e.createdAt)}`)
+    events.filter((e) => e.kind === "done").map((e) => `${e.itemId}:${dayNumber(e.createdAt, tz)}`)
   );
   const promisedEvents = events.filter((e) => e.kind === "promised" && inWin(e.createdAt));
   const kept = promisedEvents.filter((e) =>
-    doneByItemDay.has(`${e.itemId}:${dayNum(e.createdAt)}`)
+    doneByItemDay.has(`${e.itemId}:${dayNumber(e.createdAt, tz)}`)
   ).length;
   const promised = promisedEvents.length;
   return {
@@ -61,12 +56,13 @@ function mostPushedThisWeek(
   events: ReceiptEvent[],
   items: Item[],
   loDay: number,
-  hiDay: number
+  hiDay: number,
+  tz: string
 ): { title: string; count: number } | null {
   const counts = new Map<number, number>();
   for (const e of events) {
     if (e.kind !== "snoozed") continue;
-    const n = dayNum(e.createdAt);
+    const n = dayNumber(e.createdAt, tz);
     if (n < loDay || n > hiDay) continue;
     counts.set(e.itemId, (counts.get(e.itemId) ?? 0) + 1);
   }
@@ -85,14 +81,19 @@ function mostPushedThisWeek(
 }
 
 // Pure weekly receipts: items + the Event log → the numbers the board panel and
-// (later) the Sunday digest read back. Trailing 7 HKT days vs the 7 before.
-export function weeklyReceipts(items: Item[], events: ReceiptEvent[], now: Date): Receipts {
-  const today = dayNum(now);
+// (later) the Sunday digest read back. Trailing 7 local days vs the 7 before.
+export function weeklyReceipts(
+  items: Item[],
+  events: ReceiptEvent[],
+  now: Date,
+  tz: string = DEFAULT_TZ
+): Receipts {
+  const today = dayNumber(now, tz);
   const dones = events.filter((e) => e.kind === "done");
   return {
-    streak: currentStreak(items, dones, now),
-    thisWeek: statsFor(events, today - 6, today),
-    lastWeek: statsFor(events, today - 13, today - 7),
-    mostPushed: mostPushedThisWeek(events, items, today - 6, today),
+    streak: currentStreak(items, dones, now, tz),
+    thisWeek: statsFor(events, today - 6, today, tz),
+    lastWeek: statsFor(events, today - 13, today - 7, tz),
+    mostPushed: mostPushedThisWeek(events, items, today - 6, today, tz),
   };
 }

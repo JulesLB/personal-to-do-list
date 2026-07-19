@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runSweep, runTimedSweep, type Slot } from "@/lib/sweep";
+import { runSweep, runTimedSweep, runDigestTick } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +15,21 @@ export async function GET(req: NextRequest) {
     return new NextResponse("unauthorized", { status: 401 });
   }
   const slotParam = req.nextUrl.searchParams.get("slot");
-  // M8: the external scheduler hits ?slot=timed every 5 min to fire any item
-  // whose precise dueAt has arrived. The two Vercel crons keep using morning/evening.
-  const result =
-    slotParam === "timed"
-      ? await runTimedSweep()
-      : await runSweep(slotParam === "evening" ? "evening" : "morning");
+  // PRD-18: one external job hits this endpoint every ~5 min with no slot. Each
+  // tick fires any precise timed pings AND evaluates every user's local clock,
+  // sending their 08:00 / 20:00 digest once it's that hour where they are. The
+  // forced morning/evening slots are kept for manual sends; `timed` for the
+  // legacy timed-only checker.
+  let result: { sent: number; users: number };
+  if (slotParam === "morning" || slotParam === "evening") {
+    result = await runSweep(slotParam);
+  } else if (slotParam === "timed") {
+    result = await runTimedSweep();
+  } else {
+    const now = new Date();
+    const [timed, digest] = await Promise.all([runTimedSweep(now), runDigestTick(now)]);
+    result = { sent: timed.sent + digest.sent, users: digest.users };
+  }
   // Report only safe counters: how many users got a nudge, out of how many.
   return NextResponse.json({ sent: result.sent, users: result.users });
 }

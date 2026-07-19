@@ -1,5 +1,6 @@
 import type { Item } from "@prisma/client";
 import { isStaleParking } from "./rank";
+import { DEFAULT_TZ } from "./datetime";
 
 // The slipping-item buckets, hottest first. "escalated" means the referee was
 // actually told (a real consequence is live); the rest grade down through "you keep
@@ -38,16 +39,26 @@ export function fireTier(heat: number): FireTier {
   return "inferno";
 }
 
-function bucketOf(item: Item, now: Date, escalated: Set<number>): TriageBucket | null {
+function bucketOf(
+  item: Item,
+  now: Date,
+  escalated: Set<number>,
+  tz: string
+): TriageBucket | null {
   if (escalated.has(item.id)) return "escalated";
   if (item.deferCount >= 1) return "dodging";
   // An undated item left in parking past the stale threshold (7 days) is rotting:
   // it's the death zone, and it carries the board's "decide it or drop it" flag.
-  if (isStaleParking(item, now)) return "death_zone";
+  if (isStaleParking(item, now, tz)) return "death_zone";
   return null;
 }
 
-export function triage(items: Item[], events: TriageEvent[], now: Date): Triage {
+export function triage(
+  items: Item[],
+  events: TriageEvent[],
+  now: Date,
+  tz: string = DEFAULT_TZ
+): Triage {
   // An item is "escalated" only if the referee was told *this cycle*. The cycle
   // anchor is lastDoneAt (honoring a commitment resets it) or createdAt, so an
   // old send on a since-revived item doesn't keep it flagged forever.
@@ -67,7 +78,7 @@ export function triage(items: Item[], events: TriageEvent[], now: Date): Triage 
   const entries: TriageEntry[] = [];
   for (const item of items) {
     if (item.status !== "open") continue;
-    const bucket = bucketOf(item, now, escalated);
+    const bucket = bucketOf(item, now, escalated, tz);
     if (bucket) entries.push({ item, bucket });
   }
   entries.sort((a, b) => BUCKET_ORDER.indexOf(a.bucket) - BUCKET_ORDER.indexOf(b.bucket));

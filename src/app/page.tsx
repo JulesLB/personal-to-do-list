@@ -1,20 +1,22 @@
 import type { Item } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, isoHKT, timeHKT, type Ranked } from "@/lib/rank";
+import { rankActionable, sortByDate, dueInLabel, dueTone, daysOverdue, commitmentDue, deferState, parkingAgeLabel, isStaleParking, type Ranked } from "@/lib/rank";
+import { DEFAULT_TZ, isoDate, timeOfDay } from "@/lib/datetime";
 import { EditTrigger, type EditableItem } from "./EditTrigger";
 import { BurnButton } from "./BurnButton";
 import { AddItem } from "./AddItem";
 import { ReviewHint } from "./ReviewHint";
+import { TimezoneSync } from "./TimezoneSync";
 import { currentStreak } from "@/lib/streak";
 import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-const toEditable = (i: Item): EditableItem => ({
+const toEditable = (i: Item, tz: string): EditableItem => ({
   id: i.id,
   title: i.title,
-  deadline: i.deadline ? isoHKT(i.deadline) : null,
-  dueTime: i.dueAt ? timeHKT(i.dueAt) : null,
+  deadline: i.deadline ? isoDate(i.deadline, tz) : null,
+  dueTime: i.dueAt ? timeOfDay(i.dueAt, tz) : null,
   referee: i.referee,
   cadence: i.cadence,
 });
@@ -42,11 +44,12 @@ export default async function Board() {
         }),
       ])
     : [[], []];
+  const tz = me?.timezone || DEFAULT_TZ;
   const dones = events.filter((e) => e.kind === "done");
   const allOpen = allItems.filter((i) => i.status === "open");
-  const streak = currentStreak(allItems, dones, now);
+  const streak = currentStreak(allItems, dones, now, tz);
 
-  const ranked = rankActionable(allOpen, now);
+  const ranked = rankActionable(allOpen, now, tz);
   const parking = allOpen.filter((i) => i.type === "parking");
 
   const hero = ranked[0] ?? null;
@@ -57,9 +60,9 @@ export default async function Board() {
   // whole list reads in one language instead of mixing absolute dates and counts.
   const dueOf = (i: Item) =>
     i.type === "commitment"
-      ? dueInLabel(commitmentDue(i), now)
+      ? dueInLabel(commitmentDue(i, tz), now, tz)
       : i.deadline
-        ? dueInLabel(i.deadline, now)
+        ? dueInLabel(i.deadline, now, tz)
         : null;
 
   // The push tally as one steady warning marker — "you keep dodging this." Same
@@ -83,16 +86,16 @@ export default async function Board() {
   const Row = ({ r }: { r: Ranked }) => {
     const i = r.item;
     const due = dueOf(i);
-    const overdue = daysOverdue(i, now) > 0;
+    const overdue = daysOverdue(i, now, tz) > 0;
     return (
-      <div className={`row tone-${dueTone(i, now)}${overdue ? " overdue" : ""}`} data-burnable>
-        <EditTrigger item={toEditable(i)} className="row-main">
+      <div className={`row tone-${dueTone(i, now, tz)}${overdue ? " overdue" : ""}`} data-burnable>
+        <EditTrigger item={toEditable(i, tz)} className="row-main">
           <div className="row-title">
             {i.title}
             <Pushed i={i} />
           </div>
           <div className="row-meta">
-            {due ? <span className={`dl dl-${dueTone(i, now)}`}>{due}</span> : null}
+            {due ? <span className={`dl dl-${dueTone(i, now, tz)}`}>{due}</span> : null}
             {i.referee ? <span className="ref">{i.referee}</span> : null}
           </div>
         </EditTrigger>
@@ -151,11 +154,14 @@ export default async function Board() {
   // Every band uses the one order: soonest due date first, importance breaking
   // ties on the same day. burning already comes pre-sorted from rankActionable.
   const burning = inHeat("burning");
-  const soon = sortByDate(inHeat("soon"));
-  const later = sortByDate(inHeat("later"));
+  const soon = sortByDate(inHeat("soon"), tz);
+  const later = sortByDate(inHeat("later"), tz);
 
   return (
     <main className="wrap">
+      {/* PRD-18: silently report the browser's timezone so a traveling user's
+          nudges follow them with zero effort. No-ops when it already matches. */}
+      {me ? <TimezoneSync current={tz} /> : null}
       {/* Defined once: the fractal-noise filter that gives the burn-to-ash flames
           a torn, licked edge. Static on purpose — the noise is baked a single time,
           not re-generated per frame (the old SMIL <animate> version regenerated the
@@ -226,10 +232,10 @@ export default async function Board() {
             <div className="hero-kicker">
               {hero.heat === "burning" ? "Do this first" : "Top priority"}
             </div>
-            <EditTrigger item={toEditable(hero.item)} className="hero-body">
+            <EditTrigger item={toEditable(hero.item, tz)} className="hero-body">
               <div className="hero-title">{hero.item.title}</div>
               <div className="hero-meta">
-                {dueOf(hero.item) ? <span className={`dl dl-${dueTone(hero.item, now)}`}>{dueOf(hero.item)}</span> : null}
+                {dueOf(hero.item) ? <span className={`dl dl-${dueTone(hero.item, now, tz)}`}>{dueOf(hero.item)}</span> : null}
                 {hero.item.referee ? <span className="ref ref-hero">{hero.item.referee}</span> : null}
                 <Pushed i={hero.item} />
               </div>
@@ -310,13 +316,13 @@ export default async function Board() {
           </summary>
           <div className="feed">
             {parking.map((i) => {
-              const stale = isStaleParking(i, now);
+              const stale = isStaleParking(i, now, tz);
               return (
                 <div className={`row${stale ? " stale" : ""}`} key={i.id}>
-                  <EditTrigger item={toEditable(i)} className="row-main">
+                  <EditTrigger item={toEditable(i, tz)} className="row-main">
                     <div className="row-title">{i.title}</div>
                     <div className="row-meta">
-                      <span className="age">{parkingAgeLabel(i.createdAt, now)}</span>
+                      <span className="age">{parkingAgeLabel(i.createdAt, now, tz)}</span>
                       {stale ? <span className="pushed">Decide: date it or drop it</span> : null}
                     </div>
                   </EditTrigger>

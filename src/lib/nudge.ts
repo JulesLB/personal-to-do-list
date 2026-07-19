@@ -6,6 +6,7 @@ import {
   commitmentDueLabel,
   daysOverdue,
 } from "./rank";
+import { DEFAULT_TZ } from "./datetime";
 import type { Item } from "@prisma/client";
 
 const DOT = "·";
@@ -25,12 +26,12 @@ export type DailyNudge = { text: string; keyboard?: InlineKeyboard; topId: numbe
 // reads, but under "Due
 // today" every item is due today, so repeating it is just noise — there showDate
 // is false and a plain task collapses to its bare title.
-function metaLine(it: Item, now: Date, showDate: boolean): string {
+function metaLine(it: Item, now: Date, showDate: boolean, tz: string): string {
   return [
     showDate
       ? it.type === "commitment"
-        ? commitmentDueLabel(it, now)
-        : deadlineLabel(it.deadline, now)
+        ? commitmentDueLabel(it, now, tz)
+        : deadlineLabel(it.deadline, now, tz)
       : null,
     it.type === "commitment" ? cadenceLabel(it.cadence) : null,
   ]
@@ -38,8 +39,8 @@ function metaLine(it: Item, now: Date, showDate: boolean): string {
     .join(` ${DOT} `);
 }
 
-function lineItem(it: Item, now: Date, marker: string, showDate: boolean): string {
-  const meta = metaLine(it, now, showDate);
+function lineItem(it: Item, now: Date, marker: string, showDate: boolean, tz: string): string {
+  const meta = metaLine(it, now, showDate, tz);
   return `${marker} ${it.title}${meta ? ` ${DOT} ${meta}` : ""}`;
 }
 
@@ -53,11 +54,12 @@ function header(slot: Slot): string {
 export function buildDailyNudge(
   items: Item[],
   now: Date,
-  slot: Slot = "morning"
+  slot: Slot = "morning",
+  tz: string = DEFAULT_TZ
 ): DailyNudge | null {
-  const ranked = rankActionable(items, now).map((r) => r.item);
-  const overdue = ranked.filter((it) => daysOverdue(it, now) > 0);
-  const today = ranked.filter((it) => daysOverdue(it, now) === 0);
+  const ranked = rankActionable(items, now, tz).map((r) => r.item);
+  const overdue = ranked.filter((it) => daysOverdue(it, now, tz) > 0);
+  const today = ranked.filter((it) => daysOverdue(it, now, tz) === 0);
   if (!overdue.length && !today.length) return null;
 
   const shownOverdue = overdue.slice(0, SECTION_CAP);
@@ -76,7 +78,7 @@ export function buildDailyNudge(
     showDate: boolean
   ): string => {
     const lines = list.map((it) =>
-      lineItem(it, now, evening ? `${++counter}.` : BULLET, showDate)
+      lineItem(it, now, evening ? `${++counter}.` : BULLET, showDate, tz)
     );
     let s = `${icon} ${label} (${total})\n${lines.join("\n")}`;
     const extra = total - list.length;
