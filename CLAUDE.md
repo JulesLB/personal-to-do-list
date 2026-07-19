@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## STATUS: PAUSED (2026-07-19)
+
+The live instance is mothballed. Everything described below is accurate as *architecture* but is
+**not currently running**: the Telegram webhook is deleted, the `timed-nudges` GitHub Action is
+disabled, the cron-job.org jobs are off, `CRON_SECRET` is rotated (so `/api/cron` 401s on every
+call), and the Supabase project is paused (the DB refuses connections — a query fails with
+`tenant/user ... not found`). The Vercel deploy is still up and will error on any DB read. API keys
+were left valid on purpose; nothing can reach them.
+
+Local work still runs: `npm test` and `npm run build` are green on `main` with no DB. Use
+`npm run dev:local` for anything needing data.
+
+**To resume:** unpause Supabase → restore `CRON_SECRET` in Vercel → `npm run set-webhook` →
+re-enable the cron-job.org jobs and `gh workflow enable "Timed nudges"` (and uncomment its
+`schedule:` block). Parked WIP lives on `feat/per-user-timezone` (per-user timezone digests,
+2 failing tests, migration not applied to prod).
+
 ## Working agreement (binding, every session)
 
 - **Plan before building.** Before writing code for any feature or milestone, present the plan — which
